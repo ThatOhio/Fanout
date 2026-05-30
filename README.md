@@ -1,7 +1,7 @@
 # Fanout
 Search multiple engines and chat with multiple AIs side by side in a single tab. Privacy-respecting, minimal permissions, no tracking.
 
-## Local Setup
+## Local Development Setup
 
 1. Initialize from the starter template:
    - `pnpm dlx wxt@latest init fanout --template react --pm pnpm`
@@ -22,3 +22,9 @@ Search multiple engines and chat with multiple AIs side by side in a single tab.
 - `pnpm zip:firefox`
 - `pnpm zip:edge`
 - `pnpm test`
+
+## Verification
+
+- `pnpm compile` — TypeScript check
+- `pnpm test` — unit and smoke tests
+- `pnpm build && pnpm build:firefox && pnpm build:edge` — cross-browser build matrix

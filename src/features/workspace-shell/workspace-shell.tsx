@@ -62,7 +62,10 @@ export function WorkspaceShell() {
         <p>
           Mode: <strong>{workspaceMode}</strong> | Columns: <strong>{columnCount}</strong>
         </p>
-        <div className="column-layout" data-testid="column-layout">
+        <div
+          className="column-layout"
+          data-testid="column-layout"
+          style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
           {Array.from({ length: columnCount }).map((_, index) => (
             <section key={index} className="column-placeholder" aria-label={`Column ${index + 1}`}>
               Column {index + 1} Placeholder

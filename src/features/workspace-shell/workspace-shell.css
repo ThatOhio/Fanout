@@ -1,0 +1,77 @@
+.workspace-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.command-bar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #334155;
+  background: #111827;
+}
+
+.command-input {
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0 0.75rem;
+}
+
+.mode-toggle-group,
+.column-controls {
+  display: inline-flex;
+  border-radius: 0.5rem;
+  border: 1px solid #475569;
+  overflow: hidden;
+}
+
+.mode-toggle,
+.column-button,
+.settings-button {
+  border: 0;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+.mode-toggle-active,
+.column-button-active {
+  background: #0369a1;
+}
+
+.settings-button {
+  border-radius: 0.5rem;
+  border: 1px solid #475569;
+}
+
+.workspace-region {
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.column-layout {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.column-placeholder {
+  min-height: 7rem;
+  border: 1px dashed #475569;
+  border-radius: 0.5rem;
+  display: grid;
+  place-items: center;
+  background: #1e293b;
+}

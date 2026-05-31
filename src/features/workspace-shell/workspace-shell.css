@@ -58,6 +58,16 @@
   gap: 1rem;
 }
 
+.workspace-restore-notice {
+  margin: 0;
+  border: 1px solid #854d0e;
+  border-radius: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  background: #3f2f12;
+  color: #fde68a;
+  font-size: 0.875rem;
+}
+
 .column-layout {
   display: grid;
   gap: 0.75rem;

@@ -1,10 +1,19 @@
-import { useEffect, useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import './workspace-shell.css';
+import {
+  COLUMN_COUNTS,
+  DEFAULT_WORKSPACE_PREFERENCES,
+  SEARCH_PROVIDERS,
+  WORKSPACE_RESTORE_WARNING_MESSAGE,
+  loadWorkspacePreferences,
+  saveWorkspacePreferences,
+  type PersistedWorkspaceSettings,
+  type SearchProvider,
+  type WorkspacePreferencesSnapshot,
+} from './workspace-preferences-storage';
 
-export const COLUMN_COUNTS = [2, 3, 4] as const;
-export const SEARCH_PROVIDERS = ['google', 'duckduckgo', 'brave', 'bing'] as const;
+export { COLUMN_COUNTS, SEARCH_PROVIDERS };
 
-export type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
 export type ProvidersByColumn = Record<number, SearchProvider>;
 export type ColumnDispatchStatus = 'idle' | 'pending' | 'success' | 'error';
 export type ColumnDispatchState = {
@@ -20,6 +29,7 @@ export type WorkspaceShellState = {
   columnCount: (typeof COLUMN_COUNTS)[number];
   commandInput: string;
   providersByColumn: ProvidersByColumn;
+  settings: PersistedWorkspaceSettings;
   dispatchByColumn: DispatchByColumn;
 };
 
@@ -31,10 +41,7 @@ const PROVIDER_LABELS: Record<SearchProvider, string> = {
 };
 
 const DEFAULT_PROVIDERS_BY_COLUMN: ProvidersByColumn = {
-  1: 'google',
-  2: 'duckduckgo',
-  3: 'brave',
-  4: 'bing',
+  ...DEFAULT_WORKSPACE_PREFERENCES.providersByColumn,
 };
 
 let requestCounter = 0;
@@ -109,6 +116,10 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
       initialState?.providersByColumn ?? DEFAULT_STATE.providersByColumn,
       columnCount,
     ),
+    settings: {
+      ...DEFAULT_STATE.settings,
+      ...initialState?.settings,
+    },
     dispatchByColumn: { ...(initialState?.dispatchByColumn ?? DEFAULT_STATE.dispatchByColumn) },
   };
 }
@@ -134,6 +145,10 @@ type WorkspaceShellAction =
   | {
       type: 'setCommandInput';
       commandInput: string;
+    }
+  | {
+      type: 'hydratePreferences';
+      preferences: WorkspacePreferencesSnapshot;
     }
   | {
       type: 'setColumnProvider';
@@ -163,6 +178,7 @@ const DEFAULT_STATE: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
+  settings: { ...DEFAULT_WORKSPACE_PREFERENCES.settings },
   dispatchByColumn: {},
 };
 
@@ -175,6 +191,19 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
       columnCount: action.columnCount,
       providersByColumn: ensureProvidersForColumnCount(state.providersByColumn, action.columnCount),
       dispatchByColumn: clearInactiveColumnDispatches(state.dispatchByColumn, action.columnCount),
+    };
+  }
+
+  if (action.type === 'hydratePreferences') {
+    return {
+      ...state,
+      columnCount: action.preferences.columnCount,
+      providersByColumn: ensureProvidersForColumnCount(
+        action.preferences.providersByColumn,
+        action.preferences.columnCount,
+      ),
+      settings: { ...action.preferences.settings },
+      dispatchByColumn: {},
     };
   }
 
@@ -309,8 +338,60 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
   const [state, dispatch] = useReducer(workspaceShellReducer, initialState, buildInitialState);
-  const { columnCount, commandInput, providersByColumn, dispatchByColumn } = state;
+  const { columnCount, commandInput, providersByColumn, settings, dispatchByColumn } = state;
   const providerSelectRefs = useRef<Record<number, HTMLSelectElement | null>>({});
+  const hasMountedPersistenceEffect = useRef(false);
+  const [restoreNotice, setRestoreNotice] = useState<string>();
+
+  useEffect(() => {
+    let isActive = true;
+
+    void loadWorkspacePreferences()
+      .then(({ preferences, warning, didLoadPersistedValue }) => {
+        if (!isActive) {
+          return;
+        }
+
+        setRestoreNotice(warning);
+
+        if (didLoadPersistedValue) {
+          dispatch({
+            type: 'hydratePreferences',
+            preferences,
+          });
+        }
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setRestoreNotice(WORKSPACE_RESTORE_WARNING_MESSAGE);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasMountedPersistenceEffect.current) {
+      hasMountedPersistenceEffect.current = true;
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void saveWorkspacePreferences({
+        columnCount,
+        providersByColumn,
+        settings,
+      });
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [columnCount, providersByColumn, settings]);
 
   useEffect(() => {
     const activeTimers: number[] = [];
@@ -407,6 +488,15 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
         <p>
           Mode: <strong>Search</strong> | Columns: <strong>{columnCount}</strong>
         </p>
+        {restoreNotice ? (
+          <p
+            className="workspace-restore-notice"
+            role="status"
+            aria-live="polite"
+            aria-label="Workspace restore notice">
+            {restoreNotice}
+          </p>
+        ) : null}
         <div
           className="column-layout"
           data-testid="column-layout"

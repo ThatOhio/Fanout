@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   COLUMN_COUNTS,
@@ -16,6 +16,11 @@ const baseState: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
+  settings: {
+    darkMode: true,
+    replaceNewTab: false,
+    replaceAddressBarSearch: false,
+  },
   dispatchByColumn: {},
 };
 
@@ -25,7 +30,46 @@ function getDisplayedColumnCount() {
   return within(statusLine as HTMLElement).getAllByRole('strong')[1];
 }
 
+type BrowserStorageLocalMock = {
+  get: ReturnType<typeof vi.fn>;
+  set: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+};
+
+function installBrowserStorageLocalMock(mock: BrowserStorageLocalMock) {
+  const runtimeGlobal = globalThis as typeof globalThis & {
+    browser?: {
+      storage: {
+        local: BrowserStorageLocalMock;
+      };
+    };
+  };
+
+  runtimeGlobal.browser = {
+    storage: {
+      local: mock,
+    },
+  };
+}
+
+function clearBrowserStorageLocalMock() {
+  const runtimeGlobal = globalThis as typeof globalThis & {
+    browser?: unknown;
+  };
+  delete runtimeGlobal.browser;
+}
+
 describe('WorkspaceShell', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    clearBrowserStorageLocalMock();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    clearBrowserStorageLocalMock();
+  });
+
   it('renders persistent top command bar and search-only workspace', () => {
     const markup = renderToStaticMarkup(<WorkspaceShell />);
 
@@ -411,6 +455,108 @@ describe('WorkspaceShell', () => {
       query: 'best coffee beans',
     });
     expect(retriedState.dispatchByColumn[2]?.status).toBe('pending');
+  });
+
+  describe('persistence', () => {
+    it('hydrates column count and providers from persisted preferences on mount', async () => {
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({
+          fanout_workspace_preferences: {
+            schemaVersion: 1,
+            columnCount: 3,
+            providersByColumn: {
+              1: 'bing',
+              2: 'google',
+              3: 'duckduckgo',
+            },
+            settings: {
+              darkMode: true,
+              replaceNewTab: false,
+              replaceAddressBarSearch: false,
+            },
+          },
+        }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      expect(await screen.findByRole('region', { name: 'Column 3' })).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toHaveValue('bing');
+      expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toHaveValue('google');
+      expect(screen.getByRole('combobox', { name: 'Column 3 provider' })).toHaveValue('duckduckgo');
+    });
+
+    it('falls back to defaults and shows restore warning for incompatible payload', async () => {
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({
+          fanout_workspace_preferences: {
+            schemaVersion: 99,
+            columnCount: 4,
+            providersByColumn: {
+              1: 'google',
+              2: 'duckduckgo',
+              3: 'brave',
+              4: 'bing',
+            },
+            settings: {
+              darkMode: true,
+              replaceNewTab: false,
+              replaceAddressBarSearch: false,
+            },
+          },
+        }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      expect(await screen.findByRole('status', { name: 'Workspace restore notice' })).toHaveTextContent(
+        /default settings were applied/i,
+      );
+      expect(getDisplayedColumnCount()).toHaveTextContent('2');
+      expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toHaveValue('google');
+      expect(screen.queryByRole('region', { name: 'Column 3' })).not.toBeInTheDocument();
+    });
+
+    it('persists layout and provider changes with debounced writes only', async () => {
+      vi.useFakeTimers();
+      const set = vi.fn().mockResolvedValue(undefined);
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({}),
+        set,
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      fireEvent.change(screen.getByRole('textbox', { name: 'Shared query' }), {
+        target: { value: 'do not persist input' },
+      });
+      vi.advanceTimersByTime(500);
+      expect(set).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: '3' }));
+      fireEvent.change(screen.getByRole('combobox', { name: 'Column 2 provider' }), {
+        target: { value: 'bing' },
+      });
+      vi.advanceTimersByTime(500);
+      await vi.runAllTimersAsync();
+      expect(set).toHaveBeenCalled();
+
+      const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
+      expect(persistedPayload).toMatchObject({
+        schemaVersion: 1,
+        columnCount: 3,
+        providersByColumn: {
+          1: 'google',
+          2: 'bing',
+          3: 'brave',
+        },
+      });
+    });
   });
 
   describe('interaction', () => {

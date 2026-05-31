@@ -4,14 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   COLUMN_COUNTS,
+  SEARCH_PROVIDERS,
   WorkspaceShell,
   workspaceShellReducer,
+  buildDefaultProvidersByColumn,
   type WorkspaceShellState,
 } from './workspace-shell';
 
 const baseState: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
+  providersByColumn: buildDefaultProvidersByColumn(),
 };
 
 function getDisplayedColumnCount() {
@@ -61,6 +64,10 @@ describe('WorkspaceShell', () => {
     expect(backTo2.columnCount).toBe(2);
   });
 
+  it('defines the provider set as google, duckduckgo, brave, and bing', () => {
+    expect(SEARCH_PROVIDERS).toEqual(['google', 'duckduckgo', 'brave', 'bing']);
+  });
+
   it('preserves shared input across 2->3->4->2 transitions', () => {
     const withInput = workspaceShellReducer(baseState, {
       type: 'setCommandInput',
@@ -107,6 +114,49 @@ describe('WorkspaceShell', () => {
     expect((fourColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(4);
   });
 
+  it('updates only the targeted column provider in reducer state', () => {
+    const nextState = workspaceShellReducer(baseState, {
+      type: 'setColumnProvider',
+      columnIndex: 2,
+      provider: 'bing',
+    });
+
+    expect(nextState.providersByColumn[1]).toBe('google');
+    expect(nextState.providersByColumn[2]).toBe('bing');
+    expect(nextState.providersByColumn[3]).toBe('brave');
+    expect(nextState.providersByColumn[4]).toBe('bing');
+  });
+
+  it('preserves active column provider selections through 2->3->4->2 transitions', () => {
+    const updatedColumnOne = workspaceShellReducer(baseState, {
+      type: 'setColumnProvider',
+      columnIndex: 1,
+      provider: 'duckduckgo',
+    });
+    const updatedColumnTwo = workspaceShellReducer(updatedColumnOne, {
+      type: 'setColumnProvider',
+      columnIndex: 2,
+      provider: 'brave',
+    });
+    const at3 = workspaceShellReducer(updatedColumnTwo, {
+      type: 'setColumnCount',
+      columnCount: 3,
+    });
+    const at4 = workspaceShellReducer(at3, {
+      type: 'setColumnCount',
+      columnCount: 4,
+    });
+    const backTo2 = workspaceShellReducer(at4, {
+      type: 'setColumnCount',
+      columnCount: 2,
+    });
+
+    expect(backTo2.providersByColumn[1]).toBe('duckduckgo');
+    expect(backTo2.providersByColumn[2]).toBe('brave');
+    expect(backTo2.providersByColumn[3]).toBe('brave');
+    expect(backTo2.providersByColumn[4]).toBe('bing');
+  });
+
   describe('interaction', () => {
     it('reflows workspace immediately when a column control is clicked', async () => {
       const user = userEvent.setup();
@@ -145,6 +195,48 @@ describe('WorkspaceShell', () => {
       await user.click(screen.getByRole('button', { name: '2' }));
 
       expect(input).toHaveValue('best coffee beans');
+    });
+
+    it('renders one provider dropdown per active column with explicit labels', () => {
+      render(<WorkspaceShell />);
+
+      const selectors = screen.getAllByRole('combobox');
+      expect(selectors).toHaveLength(2);
+      expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toBeInTheDocument();
+    });
+
+    it('changes only the targeted column provider selection', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const columnOneProvider = screen.getByRole('combobox', { name: 'Column 1 provider' });
+      const columnTwoProvider = screen.getByRole('combobox', { name: 'Column 2 provider' });
+
+      expect(columnOneProvider).toHaveValue('google');
+      expect(columnTwoProvider).toHaveValue('duckduckgo');
+
+      await user.selectOptions(columnTwoProvider, 'bing');
+
+      expect(columnOneProvider).toHaveValue('google');
+      expect(columnTwoProvider).toHaveValue('bing');
+    });
+
+    it('keeps provider selections for surviving columns across 2->3->4->2 layout clicks', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const columnOneProvider = screen.getByRole('combobox', { name: 'Column 1 provider' });
+      const columnTwoProvider = screen.getByRole('combobox', { name: 'Column 2 provider' });
+      await user.selectOptions(columnOneProvider, 'duckduckgo');
+      await user.selectOptions(columnTwoProvider, 'brave');
+
+      await user.click(screen.getByRole('button', { name: '3' }));
+      await user.click(screen.getByRole('button', { name: '4' }));
+      await user.click(screen.getByRole('button', { name: '2' }));
+
+      expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toHaveValue('duckduckgo');
+      expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toHaveValue('brave');
     });
   });
 });

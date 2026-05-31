@@ -68,6 +68,32 @@
   border: 1px dashed #475569;
   border-radius: 0.5rem;
   display: grid;
-  place-items: center;
+  align-content: start;
+  gap: 0.85rem;
+  padding: 0.85rem;
   background: #1e293b;
+}
+
+.column-placeholder-header {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.column-provider-label {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+}
+
+.column-provider-select {
+  height: 2rem;
+  border-radius: 0.45rem;
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0 0.55rem;
+}
+
+.column-provider-select:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
 }

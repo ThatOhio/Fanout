@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { WORKSPACE_MODES, type WorkspaceMode } from '../../shared/mode';
 import './workspace-shell.css';
 
 const COLUMN_COUNTS = [2, 3, 4] as const;
 
 export function WorkspaceShell() {
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('Search');
   const [columnCount, setColumnCount] = useState<(typeof COLUMN_COUNTS)[number]>(2);
   const [commandInput, setCommandInput] = useState('');
 
@@ -21,22 +19,6 @@ export function WorkspaceShell() {
             setCommandInput(event.target.value);
           }}
         />
-
-        <div className="mode-toggle-group" role="tablist" aria-label="Mode">
-          {WORKSPACE_MODES.map((mode) => (
-            <button
-              key={mode}
-              className={workspaceMode === mode ? 'mode-toggle mode-toggle-active' : 'mode-toggle'}
-              onClick={() => {
-                setWorkspaceMode(mode);
-              }}
-              role="tab"
-              aria-selected={workspaceMode === mode}
-              type="button">
-              {mode}
-            </button>
-          ))}
-        </div>
 
         <div className="column-controls" aria-label="Column count controls">
           {COLUMN_COUNTS.map((count) => (
@@ -57,10 +39,10 @@ export function WorkspaceShell() {
         </button>
       </header>
 
-      <main className="workspace-region" data-mode={workspaceMode}>
+      <main className="workspace-region">
         <h1>Fanout Workspace</h1>
         <p>
-          Mode: <strong>{workspaceMode}</strong> | Columns: <strong>{columnCount}</strong>
+          Mode: <strong>Search</strong> | Columns: <strong>{columnCount}</strong>
         </p>
         <div
           className="column-layout"

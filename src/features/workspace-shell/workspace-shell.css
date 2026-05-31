@@ -10,7 +10,7 @@
   position: sticky;
   top: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto auto auto;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
   gap: 0.75rem;
   align-items: center;
   padding: 0.75rem 1rem;
@@ -27,7 +27,6 @@
   padding: 0 0.75rem;
 }
 
-.mode-toggle-group,
 .column-controls {
   display: inline-flex;
   border-radius: 0.5rem;
@@ -35,7 +34,6 @@
   overflow: hidden;
 }
 
-.mode-toggle,
 .column-button,
 .settings-button {
   border: 0;
@@ -45,7 +43,6 @@
   cursor: pointer;
 }
 
-.mode-toggle-active,
 .column-button-active {
   background: #0369a1;
 }

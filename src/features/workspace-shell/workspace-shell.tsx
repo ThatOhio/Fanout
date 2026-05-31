@@ -1,4 +1,4 @@
-import { useReducer } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import './workspace-shell.css';
 
 export const COLUMN_COUNTS = [2, 3, 4] as const;
@@ -6,6 +6,22 @@ export const SEARCH_PROVIDERS = ['google', 'duckduckgo', 'brave', 'bing'] as con
 
 export type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
 export type ProvidersByColumn = Record<number, SearchProvider>;
+export type ColumnDispatchStatus = 'idle' | 'pending' | 'success' | 'error';
+export type ColumnDispatchState = {
+  status: ColumnDispatchStatus;
+  query: string;
+  provider: SearchProvider;
+  requestId: string;
+  errorMessage?: string;
+};
+export type DispatchByColumn = Record<number, ColumnDispatchState | undefined>;
+export type WorkspaceShellState = {
+  columnCount: (typeof COLUMN_COUNTS)[number];
+  commandInput: string;
+  providersByColumn: ProvidersByColumn;
+  dispatchByColumn: DispatchByColumn;
+  activeRequestId: string | null;
+};
 
 const PROVIDER_LABELS: Record<SearchProvider, string> = {
   google: 'Google',
@@ -21,8 +37,33 @@ const DEFAULT_PROVIDERS_BY_COLUMN: ProvidersByColumn = {
   4: 'bing',
 };
 
+let requestCounter = 0;
+
 export function buildDefaultProvidersByColumn(): ProvidersByColumn {
   return { ...DEFAULT_PROVIDERS_BY_COLUMN };
+}
+
+function createRequestId(): string {
+  requestCounter += 1;
+  return `request-${requestCounter}`;
+}
+
+export function buildSearchProviderUrl(provider: SearchProvider, query: string): string {
+  const encodedQuery = encodeURIComponent(query);
+
+  if (provider === 'google') {
+    return `https://www.google.com/search?q=${encodedQuery}`;
+  }
+
+  if (provider === 'duckduckgo') {
+    return `https://duckduckgo.com/?q=${encodedQuery}`;
+  }
+
+  if (provider === 'brave') {
+    return `https://search.brave.com/search?q=${encodedQuery}`;
+  }
+
+  return `https://www.bing.com/search?q=${encodedQuery}`;
 }
 
 function isSearchProvider(value: string): value is SearchProvider {
@@ -68,14 +109,10 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
       initialState?.providersByColumn ?? DEFAULT_STATE.providersByColumn,
       columnCount,
     ),
+    dispatchByColumn: { ...(initialState?.dispatchByColumn ?? DEFAULT_STATE.dispatchByColumn) },
+    activeRequestId: initialState?.activeRequestId ?? DEFAULT_STATE.activeRequestId,
   };
 }
-
-export type WorkspaceShellState = {
-  columnCount: (typeof COLUMN_COUNTS)[number];
-  commandInput: string;
-  providersByColumn: ProvidersByColumn;
-};
 
 type WorkspaceShellAction =
   | {
@@ -90,12 +127,32 @@ type WorkspaceShellAction =
       type: 'setColumnProvider';
       columnIndex: number;
       provider: SearchProvider;
+      requestId?: string;
+    }
+  | {
+      type: 'submitQuery';
+      query: string;
+      requestId: string;
+    }
+  | {
+      type: 'resolveColumnDispatch';
+      columnIndex: number;
+      requestId: string;
+      status: Exclude<ColumnDispatchStatus, 'idle' | 'pending'>;
+      errorMessage?: string;
+    }
+  | {
+      type: 'retryColumnDispatch';
+      columnIndex: number;
+      requestId: string;
     };
 
 const DEFAULT_STATE: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
+  dispatchByColumn: {},
+  activeRequestId: null,
 };
 
 export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
@@ -116,12 +173,100 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
       return state;
     }
 
+    const existingDispatch = state.dispatchByColumn[action.columnIndex];
+    const shouldRestartPendingDispatch =
+      existingDispatch?.status === 'pending' && Boolean(existingDispatch.query.trim()) && Boolean(action.requestId);
+
+    const nextDispatchByColumn: DispatchByColumn = existingDispatch
+      ? {
+          ...state.dispatchByColumn,
+          [action.columnIndex]: shouldRestartPendingDispatch
+            ? {
+                ...existingDispatch,
+                provider: action.provider,
+                requestId: action.requestId ?? existingDispatch.requestId,
+                status: 'pending' as const,
+                errorMessage: undefined,
+              }
+            : {
+                ...existingDispatch,
+                provider: action.provider,
+              },
+        }
+      : state.dispatchByColumn;
+
     return {
       ...state,
       providersByColumn: {
         ...state.providersByColumn,
         [action.columnIndex]: action.provider,
       },
+      dispatchByColumn: nextDispatchByColumn,
+      activeRequestId: action.requestId ?? state.activeRequestId,
+    };
+  }
+
+  if (action.type === 'submitQuery') {
+    const nextDispatchByColumn = { ...state.dispatchByColumn };
+
+    for (let columnIndex = 1; columnIndex <= state.columnCount; columnIndex += 1) {
+      nextDispatchByColumn[columnIndex] = {
+        status: 'pending',
+        query: action.query,
+        provider: resolveColumnProvider(state.providersByColumn, columnIndex),
+        requestId: action.requestId,
+      };
+    }
+
+    return {
+      ...state,
+      dispatchByColumn: nextDispatchByColumn,
+      activeRequestId: action.requestId,
+    };
+  }
+
+  if (action.type === 'resolveColumnDispatch') {
+    const currentDispatch = state.dispatchByColumn[action.columnIndex];
+
+    if (!currentDispatch || currentDispatch.requestId !== action.requestId) {
+      return state;
+    }
+
+    return {
+      ...state,
+      dispatchByColumn: {
+        ...state.dispatchByColumn,
+        [action.columnIndex]: {
+          ...currentDispatch,
+          status: action.status,
+          errorMessage:
+            action.status === 'error'
+              ? action.errorMessage ?? `Could not load ${PROVIDER_LABELS[currentDispatch.provider]} results.`
+              : undefined,
+        },
+      },
+    };
+  }
+
+  if (action.type === 'retryColumnDispatch') {
+    const currentDispatch = state.dispatchByColumn[action.columnIndex];
+
+    if (!currentDispatch || !currentDispatch.query.trim()) {
+      return state;
+    }
+
+    return {
+      ...state,
+      dispatchByColumn: {
+        ...state.dispatchByColumn,
+        [action.columnIndex]: {
+          ...currentDispatch,
+          status: 'pending',
+          requestId: action.requestId,
+          errorMessage: undefined,
+        },
+      },
+      activeRequestId: action.requestId,
     };
   }
 
@@ -137,7 +282,36 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
   const [state, dispatch] = useReducer(workspaceShellReducer, initialState, buildInitialState);
-  const { columnCount, commandInput, providersByColumn } = state;
+  const { columnCount, commandInput, providersByColumn, dispatchByColumn } = state;
+  const providerSelectRefs = useRef<Record<number, HTMLSelectElement | null>>({});
+
+  useEffect(() => {
+    const activeTimers: number[] = [];
+
+    for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
+      const columnDispatch = dispatchByColumn[columnIndex];
+      if (!columnDispatch || columnDispatch.status !== 'pending') {
+        continue;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        dispatch({
+          type: 'resolveColumnDispatch',
+          columnIndex,
+          requestId: columnDispatch.requestId,
+          status: 'error',
+          errorMessage: `${PROVIDER_LABELS[columnDispatch.provider]} did not finish loading before timeout.`,
+        });
+      }, 10_000);
+      activeTimers.push(timeoutId);
+    }
+
+    return () => {
+      for (const timeoutId of activeTimers) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [columnCount, dispatchByColumn]);
 
   return (
     <div className="workspace-shell" data-testid="workspace-shell">
@@ -151,6 +325,25 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
             dispatch({
               type: 'setCommandInput',
               commandInput: event.target.value,
+            });
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') {
+              return;
+            }
+
+            const trimmedQuery = commandInput.trim();
+            if (!trimmedQuery) {
+              event.preventDefault();
+              return;
+            }
+
+            event.preventDefault();
+
+            dispatch({
+              type: 'submitQuery',
+              query: trimmedQuery,
+              requestId: createRequestId(),
             });
           }}
         />
@@ -193,10 +386,30 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                 <label className="column-provider-label" htmlFor={`column-provider-${index + 1}`}>
                   Column {index + 1} provider
                 </label>
+                {(() => {
+                  const columnIndex = index + 1;
+                  const selectedProvider = resolveColumnProvider(providersByColumn, columnIndex);
+                  const columnDispatch = dispatchByColumn[columnIndex];
+                  const columnStatus = columnDispatch?.status ?? 'idle';
+                  const providerLabel = PROVIDER_LABELS[selectedProvider];
+                  const statusText =
+                    columnStatus === 'idle'
+                      ? 'Idle'
+                      : columnStatus === 'pending'
+                        ? 'Pending'
+                        : columnStatus === 'success'
+                          ? 'Success'
+                          : 'Error';
+
+                  return (
+                    <>
                 <select
-                  id={`column-provider-${index + 1}`}
+                  id={`column-provider-${columnIndex}`}
                   className="column-provider-select"
-                  value={resolveColumnProvider(providersByColumn, index + 1)}
+                  value={selectedProvider}
+                  ref={(element) => {
+                    providerSelectRefs.current[columnIndex] = element;
+                  }}
                   onChange={(event) => {
                     const provider = event.target.value;
                     if (!isSearchProvider(provider)) {
@@ -205,8 +418,12 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
 
                     dispatch({
                       type: 'setColumnProvider',
-                      columnIndex: index + 1,
+                      columnIndex,
                       provider,
+                      requestId:
+                        columnDispatch?.status === 'pending' && Boolean(columnDispatch.query.trim())
+                          ? createRequestId()
+                          : undefined,
                     });
                   }}>
                   {SEARCH_PROVIDERS.map((provider) => (
@@ -215,8 +432,86 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                     </option>
                   ))}
                 </select>
+                      <span
+                        aria-label={`Column ${columnIndex} status`}
+                        role="status"
+                        aria-live="polite"
+                        className={`column-status column-status-${columnStatus}`}>
+                        {statusText}
+                      </span>
+                      {columnDispatch?.query ? (
+                        <div className="column-portal">
+                          <iframe
+                            key={`${columnIndex}-${columnDispatch.requestId}-${selectedProvider}`}
+                            className="column-portal-frame"
+                            title={`${providerLabel} results for ${columnDispatch.query}`}
+                            src={buildSearchProviderUrl(selectedProvider, columnDispatch.query)}
+                            onLoad={() => {
+                              dispatch({
+                                type: 'resolveColumnDispatch',
+                                columnIndex,
+                                requestId: columnDispatch.requestId,
+                                status: 'success',
+                              });
+                            }}
+                            onError={() => {
+                              dispatch({
+                                type: 'resolveColumnDispatch',
+                                columnIndex,
+                                requestId: columnDispatch.requestId,
+                                status: 'error',
+                                errorMessage: `Could not load ${providerLabel} results.`,
+                              });
+                            }}
+                            onErrorCapture={() => {
+                              dispatch({
+                                type: 'resolveColumnDispatch',
+                                columnIndex,
+                                requestId: columnDispatch.requestId,
+                                status: 'error',
+                                errorMessage: `Could not load ${providerLabel} results.`,
+                              });
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span>Column {columnIndex} Placeholder</span>
+                      )}
+                      {columnStatus === 'error' && columnDispatch ? (
+                        <div className="column-error" role="alert">
+                          <p>
+                            {columnDispatch.errorMessage ?? `Could not load ${providerLabel} results.`}
+                          </p>
+                          <div className="column-error-actions">
+                            <button
+                              type="button"
+                              className="column-action-button"
+                              aria-label={`Retry column ${columnIndex}`}
+                              onClick={() => {
+                                dispatch({
+                                  type: 'retryColumnDispatch',
+                                  columnIndex,
+                                  requestId: createRequestId(),
+                                });
+                              }}>
+                              Retry
+                            </button>
+                            <button
+                              type="button"
+                              className="column-action-button"
+                              aria-label={`Change provider for column ${columnIndex}`}
+                              onClick={() => {
+                                providerSelectRefs.current[columnIndex]?.focus();
+                              }}>
+                              Change provider
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </header>
-              <span>Column {index + 1} Placeholder</span>
             </section>
           ))}
         </div>

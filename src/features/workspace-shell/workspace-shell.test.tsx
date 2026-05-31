@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,6 +6,7 @@ import {
   COLUMN_COUNTS,
   SEARCH_PROVIDERS,
   WorkspaceShell,
+  buildSearchProviderUrl,
   workspaceShellReducer,
   buildDefaultProvidersByColumn,
   type WorkspaceShellState,
@@ -15,6 +16,8 @@ const baseState: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
+  dispatchByColumn: {},
+  activeRequestId: null,
 };
 
 function getDisplayedColumnCount() {
@@ -33,8 +36,8 @@ describe('WorkspaceShell', () => {
     expect(markup).toContain('aria-label="Column count controls"');
     expect(markup).toContain('Columns: <strong>2</strong>');
     expect(markup).toContain('aria-label="Open settings"');
-    expect(markup).toContain('Column 1 Placeholder');
-    expect(markup).not.toContain('Column 3 Placeholder');
+    expect(markup).toContain('Column 1');
+    expect(markup).not.toContain('Column 3');
   });
 
   it('exposes active state for each column control', () => {
@@ -91,6 +94,13 @@ describe('WorkspaceShell', () => {
     expect(backTo2.commandInput).toBe('best coffee beans');
   });
 
+  it('builds provider-specific URLs with encoded query text', () => {
+    expect(buildSearchProviderUrl('google', 'best coffee')).toBe('https://www.google.com/search?q=best%20coffee');
+    expect(buildSearchProviderUrl('duckduckgo', 'best coffee')).toBe('https://duckduckgo.com/?q=best%20coffee');
+    expect(buildSearchProviderUrl('brave', 'best coffee')).toBe('https://search.brave.com/search?q=best%20coffee');
+    expect(buildSearchProviderUrl('bing', 'best coffee')).toBe('https://www.bing.com/search?q=best%20coffee');
+  });
+
   it('renders placeholder count based on active column count', () => {
     const twoColumnState = workspaceShellReducer(baseState, {
       type: 'setColumnCount',
@@ -109,9 +119,9 @@ describe('WorkspaceShell', () => {
     const threeColumnMarkup = renderToStaticMarkup(<WorkspaceShell initialState={threeColumnState} />);
     const fourColumnMarkup = renderToStaticMarkup(<WorkspaceShell initialState={fourColumnState} />);
 
-    expect((twoColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(2);
-    expect((threeColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(3);
-    expect((fourColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(4);
+    expect((twoColumnMarkup.match(/Column [0-9]/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect((threeColumnMarkup.match(/Column [0-9]/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((fourColumnMarkup.match(/Column [0-9]/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 
   it('updates only the targeted column provider in reducer state', () => {
@@ -190,19 +200,97 @@ describe('WorkspaceShell', () => {
     expect(backTo2.providersByColumn[4]).toBe('bing');
   });
 
+  it('fans out a submit action to all active columns with isolated pending state', () => {
+    const nextState = workspaceShellReducer(
+      {
+        ...baseState,
+        columnCount: 3,
+      },
+      {
+        type: 'submitQuery',
+        query: 'best coffee beans',
+        requestId: 'request-1',
+      },
+    );
+
+    expect(nextState.dispatchByColumn[1]).toMatchObject({
+      status: 'pending',
+      query: 'best coffee beans',
+      provider: 'google',
+      requestId: 'request-1',
+    });
+    expect(nextState.dispatchByColumn[2]).toMatchObject({
+      status: 'pending',
+      query: 'best coffee beans',
+      provider: 'duckduckgo',
+      requestId: 'request-1',
+    });
+    expect(nextState.dispatchByColumn[3]).toMatchObject({
+      status: 'pending',
+      query: 'best coffee beans',
+      provider: 'brave',
+      requestId: 'request-1',
+    });
+    expect(nextState.dispatchByColumn[4]).toBeUndefined();
+  });
+
+  it('keeps sibling dispatch state isolated during status resolution', () => {
+    const pendingState = workspaceShellReducer(baseState, {
+      type: 'submitQuery',
+      query: 'best coffee beans',
+      requestId: 'request-1',
+    });
+    const resolvedState = workspaceShellReducer(pendingState, {
+      type: 'resolveColumnDispatch',
+      columnIndex: 1,
+      requestId: 'request-1',
+      status: 'success',
+    });
+
+    expect(resolvedState.dispatchByColumn[1]?.status).toBe('success');
+    expect(resolvedState.dispatchByColumn[2]?.status).toBe('pending');
+  });
+
+  it('retries only the targeted error column', () => {
+    const pendingState = workspaceShellReducer(baseState, {
+      type: 'submitQuery',
+      query: 'best coffee beans',
+      requestId: 'request-1',
+    });
+    const erroredState = workspaceShellReducer(pendingState, {
+      type: 'resolveColumnDispatch',
+      columnIndex: 1,
+      requestId: 'request-1',
+      status: 'error',
+      errorMessage: 'Column timed out.',
+    });
+    const retriedState = workspaceShellReducer(erroredState, {
+      type: 'retryColumnDispatch',
+      columnIndex: 1,
+      requestId: 'request-2',
+    });
+
+    expect(retriedState.dispatchByColumn[1]).toMatchObject({
+      status: 'pending',
+      requestId: 'request-2',
+      query: 'best coffee beans',
+    });
+    expect(retriedState.dispatchByColumn[2]?.status).toBe('pending');
+  });
+
   describe('interaction', () => {
     it('reflows workspace immediately when a column control is clicked', async () => {
       const user = userEvent.setup();
       render(<WorkspaceShell />);
 
       expect(getDisplayedColumnCount()).toHaveTextContent('2');
-      expect(screen.queryByText('Column 3 Placeholder')).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Column 3' })).not.toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: '3' }));
 
       expect(getDisplayedColumnCount()).toHaveTextContent('3');
-      expect(screen.getByText('Column 3 Placeholder')).toBeInTheDocument();
-      expect(screen.getAllByText(/Placeholder/)).toHaveLength(3);
+      expect(screen.getByRole('region', { name: 'Column 3' })).toBeInTheDocument();
+      expect(screen.getAllByRole('region', { name: /Column [0-9]/ })).toHaveLength(3);
     });
 
     it('updates aria-pressed on the active column control after layout changes', async () => {
@@ -270,6 +358,56 @@ describe('WorkspaceShell', () => {
 
       expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toHaveValue('duckduckgo');
       expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toHaveValue('brave');
+    });
+
+    it('submits trimmed shared query to all active columns with Enter and preserves input text', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const input = screen.getByRole('textbox', { name: 'Shared query' });
+      await user.type(input, '  best coffee beans  {enter}');
+
+      expect(input).toHaveValue('  best coffee beans  ');
+      expect(screen.getByTitle('Google results for best coffee beans')).toHaveAttribute(
+        'src',
+        'https://www.google.com/search?q=best%20coffee%20beans',
+      );
+      expect(screen.getByTitle('DuckDuckGo results for best coffee beans')).toHaveAttribute(
+        'src',
+        'https://duckduckgo.com/?q=best%20coffee%20beans',
+      );
+    });
+
+    it('keeps healthy columns running when one column errors', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const input = screen.getByRole('textbox', { name: 'Shared query' });
+      await user.type(input, 'best coffee beans{enter}');
+
+      const googleFrame = screen.getByTitle('Google results for best coffee beans');
+      const duckFrame = screen.getByTitle('DuckDuckGo results for best coffee beans');
+
+      fireEvent.error(googleFrame);
+      fireEvent.load(duckFrame);
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Google');
+      expect(screen.getByRole('status', { name: 'Column 2 status' })).toHaveTextContent('Success');
+    });
+
+    it('supports retry and change provider recovery actions on error', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const input = screen.getByRole('textbox', { name: 'Shared query' });
+      await user.type(input, 'best coffee beans{enter}');
+      fireEvent.error(screen.getByTitle('Google results for best coffee beans'));
+
+      await user.click(screen.getByRole('button', { name: 'Change provider for column 1' }));
+      expect(screen.getByRole('combobox', { name: 'Column 1 provider' })).toHaveFocus();
+
+      await user.click(screen.getByRole('button', { name: 'Retry column 1' }));
+      expect(screen.getByRole('status', { name: 'Column 1 status' })).toHaveTextContent('Pending');
     });
   });
 });

@@ -12,6 +12,7 @@ export type ColumnDispatchState = {
   query: string;
   provider: SearchProvider;
   requestId: string;
+  pendingStartedAt: number;
   errorMessage?: string;
 };
 export type DispatchByColumn = Record<number, ColumnDispatchState | undefined>;
@@ -20,7 +21,6 @@ export type WorkspaceShellState = {
   commandInput: string;
   providersByColumn: ProvidersByColumn;
   dispatchByColumn: DispatchByColumn;
-  activeRequestId: string | null;
 };
 
 const PROVIDER_LABELS: Record<SearchProvider, string> = {
@@ -110,8 +110,20 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
       columnCount,
     ),
     dispatchByColumn: { ...(initialState?.dispatchByColumn ?? DEFAULT_STATE.dispatchByColumn) },
-    activeRequestId: initialState?.activeRequestId ?? DEFAULT_STATE.activeRequestId,
   };
+}
+
+function clearInactiveColumnDispatches(
+  dispatchByColumn: DispatchByColumn,
+  columnCount: WorkspaceShellState['columnCount'],
+): DispatchByColumn {
+  const nextDispatchByColumn = { ...dispatchByColumn };
+
+  for (let columnIndex = columnCount + 1; columnIndex <= 4; columnIndex += 1) {
+    delete nextDispatchByColumn[columnIndex];
+  }
+
+  return nextDispatchByColumn;
 }
 
 type WorkspaceShellAction =
@@ -152,8 +164,9 @@ const DEFAULT_STATE: WorkspaceShellState = {
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
   dispatchByColumn: {},
-  activeRequestId: null,
 };
+
+const COLUMN_DISPATCH_TIMEOUT_MS = 10_000;
 
 export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
   if (action.type === 'setColumnCount') {
@@ -161,6 +174,7 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
       ...state,
       columnCount: action.columnCount,
       providersByColumn: ensureProvidersForColumnCount(state.providersByColumn, action.columnCount),
+      dispatchByColumn: clearInactiveColumnDispatches(state.dispatchByColumn, action.columnCount),
     };
   }
 
@@ -174,6 +188,7 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
     }
 
     const existingDispatch = state.dispatchByColumn[action.columnIndex];
+    // During an in-flight query, changing provider restarts only that column with a new requestId.
     const shouldRestartPendingDispatch =
       existingDispatch?.status === 'pending' && Boolean(existingDispatch.query.trim()) && Boolean(action.requestId);
 
@@ -186,6 +201,7 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
                 provider: action.provider,
                 requestId: action.requestId ?? existingDispatch.requestId,
                 status: 'pending' as const,
+                pendingStartedAt: Date.now(),
                 errorMessage: undefined,
               }
             : {
@@ -202,12 +218,19 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
         [action.columnIndex]: action.provider,
       },
       dispatchByColumn: nextDispatchByColumn,
-      activeRequestId: action.requestId ?? state.activeRequestId,
     };
   }
 
   if (action.type === 'submitQuery') {
-    const nextDispatchByColumn = { ...state.dispatchByColumn };
+    if (!action.query.trim()) {
+      return state;
+    }
+
+    const nextDispatchByColumn = clearInactiveColumnDispatches(
+      { ...state.dispatchByColumn },
+      state.columnCount,
+    );
+    const pendingStartedAt = Date.now();
 
     for (let columnIndex = 1; columnIndex <= state.columnCount; columnIndex += 1) {
       nextDispatchByColumn[columnIndex] = {
@@ -215,20 +238,24 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
         query: action.query,
         provider: resolveColumnProvider(state.providersByColumn, columnIndex),
         requestId: action.requestId,
+        pendingStartedAt,
       };
     }
 
     return {
       ...state,
       dispatchByColumn: nextDispatchByColumn,
-      activeRequestId: action.requestId,
     };
   }
 
   if (action.type === 'resolveColumnDispatch') {
     const currentDispatch = state.dispatchByColumn[action.columnIndex];
 
-    if (!currentDispatch || currentDispatch.requestId !== action.requestId) {
+    if (
+      !currentDispatch ||
+      currentDispatch.requestId !== action.requestId ||
+      currentDispatch.status !== 'pending'
+    ) {
       return state;
     }
 
@@ -251,7 +278,7 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
   if (action.type === 'retryColumnDispatch') {
     const currentDispatch = state.dispatchByColumn[action.columnIndex];
 
-    if (!currentDispatch || !currentDispatch.query.trim()) {
+    if (!currentDispatch || currentDispatch.status !== 'error' || !currentDispatch.query.trim()) {
       return state;
     }
 
@@ -263,10 +290,10 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
           ...currentDispatch,
           status: 'pending',
           requestId: action.requestId,
+          pendingStartedAt: Date.now(),
           errorMessage: undefined,
         },
       },
-      activeRequestId: action.requestId,
     };
   }
 
@@ -287,6 +314,7 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
 
   useEffect(() => {
     const activeTimers: number[] = [];
+    const now = Date.now();
 
     for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
       const columnDispatch = dispatchByColumn[columnIndex];
@@ -294,15 +322,18 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
         continue;
       }
 
+      const remainingMs = Math.max(0, COLUMN_DISPATCH_TIMEOUT_MS - (now - columnDispatch.pendingStartedAt));
+      const { requestId, provider } = columnDispatch;
+
       const timeoutId = window.setTimeout(() => {
         dispatch({
           type: 'resolveColumnDispatch',
           columnIndex,
-          requestId: columnDispatch.requestId,
+          requestId,
           status: 'error',
-          errorMessage: `${PROVIDER_LABELS[columnDispatch.provider]} did not finish loading before timeout.`,
+          errorMessage: `${PROVIDER_LABELS[provider]} did not finish loading before timeout.`,
         });
-      }, 10_000);
+      }, remainingMs);
       activeTimers.push(timeoutId);
     }
 
@@ -328,7 +359,7 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
             });
           }}
           onKeyDown={(event) => {
-            if (event.key !== 'Enter') {
+            if (event.key !== 'Enter' || event.repeat) {
               return;
             }
 
@@ -455,15 +486,6 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                               });
                             }}
                             onError={() => {
-                              dispatch({
-                                type: 'resolveColumnDispatch',
-                                columnIndex,
-                                requestId: columnDispatch.requestId,
-                                status: 'error',
-                                errorMessage: `Could not load ${providerLabel} results.`,
-                              });
-                            }}
-                            onErrorCapture={() => {
                               dispatch({
                                 type: 'resolveColumnDispatch',
                                 columnIndex,

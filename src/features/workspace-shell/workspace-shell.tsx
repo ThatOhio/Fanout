@@ -1,11 +1,49 @@
-import { useState } from 'react';
+import { useReducer } from 'react';
 import './workspace-shell.css';
 
-const COLUMN_COUNTS = [2, 3, 4] as const;
+export const COLUMN_COUNTS = [2, 3, 4] as const;
 
-export function WorkspaceShell() {
-  const [columnCount, setColumnCount] = useState<(typeof COLUMN_COUNTS)[number]>(2);
-  const [commandInput, setCommandInput] = useState('');
+export type WorkspaceShellState = {
+  columnCount: (typeof COLUMN_COUNTS)[number];
+  commandInput: string;
+};
+
+type WorkspaceShellAction =
+  | {
+      type: 'setColumnCount';
+      columnCount: WorkspaceShellState['columnCount'];
+    }
+  | {
+      type: 'setCommandInput';
+      commandInput: string;
+    };
+
+const DEFAULT_STATE: WorkspaceShellState = {
+  columnCount: 2,
+  commandInput: '',
+};
+
+export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
+  if (action.type === 'setColumnCount') {
+    return {
+      ...state,
+      columnCount: action.columnCount,
+    };
+  }
+
+  return {
+    ...state,
+    commandInput: action.commandInput,
+  };
+}
+
+type WorkspaceShellProps = {
+  initialState?: WorkspaceShellState;
+};
+
+export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
+  const [state, dispatch] = useReducer(workspaceShellReducer, initialState ?? DEFAULT_STATE);
+  const { columnCount, commandInput } = state;
 
   return (
     <div className="workspace-shell" data-testid="workspace-shell">
@@ -16,7 +54,10 @@ export function WorkspaceShell() {
           placeholder="Type one query to fan out..."
           value={commandInput}
           onChange={(event) => {
-            setCommandInput(event.target.value);
+            dispatch({
+              type: 'setCommandInput',
+              commandInput: event.target.value,
+            });
           }}
         />
 
@@ -25,8 +66,12 @@ export function WorkspaceShell() {
             <button
               key={count}
               className={columnCount === count ? 'column-button column-button-active' : 'column-button'}
+              aria-pressed={columnCount === count}
               onClick={() => {
-                setColumnCount(count);
+                dispatch({
+                  type: 'setColumnCount',
+                  columnCount: count,
+                });
               }}
               type="button">
               {count}

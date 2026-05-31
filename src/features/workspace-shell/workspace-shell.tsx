@@ -354,12 +354,14 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
   });
   const [restoreNotice, setRestoreNotice] = useState<string>();
 
-  preferencesSnapshotRef.current = {
-    columnCount,
-    providersByColumn,
-    settings,
-  };
-  dispatchByColumnRef.current = dispatchByColumn;
+  useEffect(() => {
+    preferencesSnapshotRef.current = {
+      columnCount,
+      providersByColumn,
+      settings,
+    };
+    dispatchByColumnRef.current = dispatchByColumn;
+  }, [columnCount, providersByColumn, settings, dispatchByColumn]);
 
   useEffect(() => {
     let isActive = true;

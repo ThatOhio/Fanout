@@ -43,4 +43,20 @@ describe('verify-permissions policy guard', () => {
 
     expect(violations).toHaveLength(2);
   });
+
+  it('flags broad http wildcard host scope', () => {
+    const violations = findBroadPermissionViolations([
+      {
+        path: 'permissions-http.ts',
+        content: 'const host = "http://*/*";',
+      },
+    ]);
+
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        path: 'permissions-http.ts',
+        pattern: 'http://*/*',
+      }),
+    );
+  });
 });

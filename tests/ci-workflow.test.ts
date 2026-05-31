@@ -22,6 +22,14 @@ describe('CI workflow baseline gates', () => {
     expect(workflow).toContain('pnpm build');
   });
 
+  it('wires policy-gates for permission and header checks', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    expect(workflow).toContain('policy-gates');
+    expect(workflow).toContain('pnpm policy:permissions');
+    expect(workflow).toContain('pnpm policy:headers');
+  });
+
   it('exposes explicit browser lanes for Chrome, Firefox, and Edge', () => {
     const workflow = readFileSync(workflowPath, 'utf8');
 

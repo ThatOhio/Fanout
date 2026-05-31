@@ -13,6 +13,21 @@ describe('verify-security-header-policy guard', () => {
     expect(violations).toEqual([]);
   });
 
+  it('allows bare header name references without tampering context', () => {
+    const violations = findSecurityHeaderPolicyViolations([
+      {
+        path: 'docs.ts',
+        content: '// Document content-security-policy behavior for reviewers.',
+      },
+      {
+        path: 'rules.ts',
+        content: 'import { declarativeNetRequest } from "webextension-polyfill";',
+      },
+    ]);
+
+    expect(violations).toEqual([]);
+  });
+
   it('flags global response header modification hooks', () => {
     const violations = findSecurityHeaderPolicyViolations([
       {
@@ -41,7 +56,40 @@ describe('verify-security-header-policy guard', () => {
     expect(violations).toContainEqual(
       expect.objectContaining({
         path: 'headers.ts',
-        pattern: 'content-security-policy',
+        pattern: 'content-security-policy tampering',
+      }),
+    );
+  });
+
+  it('flags strict-transport-security stripping attempts', () => {
+    const violations = findSecurityHeaderPolicyViolations([
+      {
+        path: 'headers.ts',
+        content: 'headers = headers.filter((h) => h.name !== "strict-transport-security");',
+      },
+    ]);
+
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        path: 'headers.ts',
+        pattern: 'strict-transport-security tampering',
+      }),
+    );
+  });
+
+  it('flags declarativeNetRequest header modification', () => {
+    const violations = findSecurityHeaderPolicyViolations([
+      {
+        path: 'rules.ts',
+        content:
+          'declarativeNetRequest.updateDynamicRules({ addRules: [{ action: { type: "modifyHeaders", responseHeaders: [{ header: "content-security-policy", operation: "remove" }] } }] });',
+      },
+    ]);
+
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        path: 'rules.ts',
+        pattern: 'declarativeNetRequest header modification',
       }),
     );
   });

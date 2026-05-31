@@ -27,7 +27,7 @@ function collectFilesFromDirectory(directory) {
   const absoluteDirectory = resolve(ROOT, directory);
   const files = [];
 
-  let entries = [];
+  let entries;
   try {
     entries = readdirSync(absoluteDirectory);
   } catch {
@@ -36,7 +36,13 @@ function collectFilesFromDirectory(directory) {
 
   for (const entry of entries) {
     const absolutePath = join(absoluteDirectory, entry);
-    const stats = statSync(absolutePath);
+
+    let stats;
+    try {
+      stats = statSync(absolutePath);
+    } catch {
+      continue;
+    }
 
     if (stats.isDirectory()) {
       files.push(...collectFilesFromDirectory(relative(ROOT, absolutePath)));
@@ -64,8 +70,11 @@ function collectProjectRecords() {
     try {
       const content = readFileSync(file, 'utf8');
       records.push({ path: relative(ROOT, file), content });
-    } catch {
-      // Optional files are skipped when absent.
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+        continue;
+      }
+      throw error;
     }
   }
 
@@ -92,6 +101,13 @@ export function findBroadPermissionViolations(records) {
 
 function run() {
   const records = collectProjectRecords();
+
+  if (records.length === 0) {
+    console.error('Permission policy check failed: no scannable project files found.');
+    process.exitCode = 1;
+    return;
+  }
+
   const violations = findBroadPermissionViolations(records);
 
   if (violations.length > 0) {

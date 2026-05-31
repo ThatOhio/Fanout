@@ -30,7 +30,7 @@ Search multiple engines side by side in a single tab. Privacy-respecting, minima
 
 - `pnpm compile` — TypeScript check
 - `pnpm typecheck` — stable CI typecheck alias
-- `pnpm lint` — baseline repository lint checks
+- `pnpm lint` — ESLint checks for `entrypoints/`, `src/`, `tests/`, and `scripts/`
 - `pnpm test` — unit and smoke tests
 - `pnpm build && pnpm build:firefox && pnpm build:edge` — cross-browser build matrix
 - `pnpm policy:permissions` — fails on broad host permission patterns (for example `<all_urls>`)
@@ -41,4 +41,13 @@ Search multiple engines side by side in a single tab. Privacy-respecting, minima
 - Pull requests and pushes run `.github/workflows/ci.yml`.
 - Required baseline checks: lint, typecheck, test, and build.
 - Browser builds: `build-chrome`, `build-firefox`, and `build-edge`.
-- Policy gates block merge when broad permissions or global header-weakening patterns are introduced. These were the primary reason I set out to create my own plugin in the first place, so starting off with them heavily enforced from day 1. 
+- Policy gates block merge when broad permissions or global header-weakening patterns are introduced.
+
+## Permission Rationale
+
+Fanout follows a least-privilege posture. Policy checks enforce the following baseline rules:
+
+- **Broad host scope is blocked** — patterns such as `<all_urls>`, `*://*/*`, and `http(s)://*/*` fail CI unless explicitly approved and documented in a future policy exception process.
+- **Header tampering is blocked** — global `webRequest.onHeadersReceived` hooks and header strip/modify patterns (for example CSP or HSTS removal) fail CI.
+- **Current scaffold scope** — the WXT starter uses default extension permissions only; no broad host permissions are declared in `wxt.config.ts` at this stage.
+- **Audit trail** — permission or header-policy exceptions must be documented in this section with rationale before merge approval.

@@ -1,3 +1,5 @@
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
@@ -11,6 +13,12 @@ const baseState: WorkspaceShellState = {
   columnCount: 2,
   commandInput: '',
 };
+
+function getDisplayedColumnCount() {
+  const statusLine = screen.getByText(/Mode:/).closest('p');
+  expect(statusLine).not.toBeNull();
+  return within(statusLine as HTMLElement).getAllByRole('strong')[1];
+}
 
 describe('WorkspaceShell', () => {
   it('renders persistent top command bar and search-only workspace', () => {
@@ -97,5 +105,46 @@ describe('WorkspaceShell', () => {
     expect((twoColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(2);
     expect((threeColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(3);
     expect((fourColumnMarkup.match(/Placeholder/g) ?? []).length).toBe(4);
+  });
+
+  describe('interaction', () => {
+    it('reflows workspace immediately when a column control is clicked', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      expect(getDisplayedColumnCount()).toHaveTextContent('2');
+      expect(screen.queryByText('Column 3 Placeholder')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: '3' }));
+
+      expect(getDisplayedColumnCount()).toHaveTextContent('3');
+      expect(screen.getByText('Column 3 Placeholder')).toBeInTheDocument();
+      expect(screen.getAllByText(/Placeholder/)).toHaveLength(3);
+    });
+
+    it('updates aria-pressed on the active column control after layout changes', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: '4' }));
+
+      expect(screen.getByRole('button', { name: '4' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('preserves shared input across 2->3->4->2 layout clicks', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      const input = screen.getByRole('textbox', { name: 'Shared query' });
+      await user.type(input, 'best coffee beans');
+
+      await user.click(screen.getByRole('button', { name: '3' }));
+      await user.click(screen.getByRole('button', { name: '4' }));
+      await user.click(screen.getByRole('button', { name: '2' }));
+
+      expect(input).toHaveValue('best coffee beans');
+    });
   });
 });

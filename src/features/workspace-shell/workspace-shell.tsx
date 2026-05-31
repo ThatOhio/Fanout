@@ -124,6 +124,10 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
   };
 }
 
+function hasPendingColumnDispatches(dispatchByColumn: DispatchByColumn): boolean {
+  return Object.values(dispatchByColumn).some((columnDispatch) => columnDispatch?.status === 'pending');
+}
+
 function clearInactiveColumnDispatches(
   dispatchByColumn: DispatchByColumn,
   columnCount: WorkspaceShellState['columnCount'],
@@ -203,7 +207,7 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
         action.preferences.columnCount,
       ),
       settings: { ...action.preferences.settings },
-      dispatchByColumn: {},
+      dispatchByColumn: state.dispatchByColumn,
     };
   }
 
@@ -341,7 +345,21 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
   const { columnCount, commandInput, providersByColumn, settings, dispatchByColumn } = state;
   const providerSelectRefs = useRef<Record<number, HTMLSelectElement | null>>({});
   const hasMountedPersistenceEffect = useRef(false);
+  const hasUserEditedPreferences = useRef(false);
+  const dispatchByColumnRef = useRef(dispatchByColumn);
+  const preferencesSnapshotRef = useRef<WorkspacePreferencesSnapshot>({
+    columnCount: DEFAULT_STATE.columnCount,
+    providersByColumn: DEFAULT_STATE.providersByColumn,
+    settings: DEFAULT_STATE.settings,
+  });
   const [restoreNotice, setRestoreNotice] = useState<string>();
+
+  preferencesSnapshotRef.current = {
+    columnCount,
+    providersByColumn,
+    settings,
+  };
+  dispatchByColumnRef.current = dispatchByColumn;
 
   useEffect(() => {
     let isActive = true;
@@ -354,7 +372,11 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
 
         setRestoreNotice(warning);
 
-        if (didLoadPersistedValue) {
+        if (
+          didLoadPersistedValue &&
+          !hasUserEditedPreferences.current &&
+          !hasPendingColumnDispatches(dispatchByColumnRef.current)
+        ) {
           dispatch({
             type: 'hydratePreferences',
             preferences,
@@ -381,15 +403,12 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void saveWorkspacePreferences({
-        columnCount,
-        providersByColumn,
-        settings,
-      });
+      void saveWorkspacePreferences(preferencesSnapshotRef.current);
     }, 200);
 
     return () => {
       window.clearTimeout(timeoutId);
+      void saveWorkspacePreferences(preferencesSnapshotRef.current);
     };
   }, [columnCount, providersByColumn, settings]);
 
@@ -467,6 +486,7 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
               className={columnCount === count ? 'column-button column-button-active' : 'column-button'}
               aria-pressed={columnCount === count}
               onClick={() => {
+                hasUserEditedPreferences.current = true;
                 dispatch({
                   type: 'setColumnCount',
                   columnCount: count,
@@ -537,6 +557,7 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                       return;
                     }
 
+                    hasUserEditedPreferences.current = true;
                     dispatch({
                       type: 'setColumnProvider',
                       columnIndex,

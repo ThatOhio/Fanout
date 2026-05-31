@@ -76,6 +76,14 @@ describe('workspace-preferences-storage', () => {
     expect(result.warning).toMatch(/could not be restored/i);
   });
 
+  it('loads fallback defaults without warning when storage area is unavailable', async () => {
+    const result = await loadWorkspacePreferences(undefined);
+
+    expect(result.preferences).toEqual(DEFAULT_WORKSPACE_PREFERENCES);
+    expect(result.warning).toBeUndefined();
+    expect(result.didLoadPersistedValue).toBe(false);
+  });
+
   it('loads fallback defaults without warning when payload is missing', async () => {
     const storageArea: WorkspacePreferencesStorageArea = {
       get: vi.fn().mockResolvedValue({}),
@@ -162,5 +170,24 @@ describe('workspace-preferences-storage', () => {
         },
       },
     });
+  });
+
+  it('does not throw when storage set rejects', async () => {
+    const storageArea: WorkspacePreferencesStorageArea = {
+      get: vi.fn(),
+      set: vi.fn().mockRejectedValue(new Error('quota exceeded')),
+      remove: vi.fn(),
+    };
+
+    await expect(
+      saveWorkspacePreferences(
+        {
+          columnCount: 2,
+          providersByColumn: DEFAULT_WORKSPACE_PREFERENCES.providersByColumn,
+          settings: DEFAULT_WORKSPACE_PREFERENCES.settings,
+        },
+        storageArea,
+      ),
+    ).resolves.toBeUndefined();
   });
 });

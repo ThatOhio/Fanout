@@ -184,7 +184,7 @@ export async function loadWorkspacePreferences(
   if (!storageArea) {
     return {
       preferences: fallbackPreferences,
-      warning: WORKSPACE_RESTORE_WARNING_MESSAGE,
+      warning: undefined,
       didLoadPersistedValue: false,
     };
   }
@@ -245,7 +245,11 @@ export async function saveWorkspacePreferences(
     },
   };
 
-  await storageArea.set({
-    [WORKSPACE_PREFERENCES_STORAGE_KEY]: payload,
-  });
+  try {
+    await storageArea.set({
+      [WORKSPACE_PREFERENCES_STORAGE_KEY]: payload,
+    });
+  } catch {
+    // Storage quota or runtime errors must not break the workspace UI.
+  }
 }

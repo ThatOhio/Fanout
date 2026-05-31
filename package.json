@@ -3,6 +3,7 @@
   "description": "Fanout browser extension workspace shell",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@11.5.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -14,6 +15,11 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
+    "lint": "eslint entrypoints src tests scripts --max-warnings 0",
+    "typecheck": "pnpm run compile",
+    "policy:permissions": "node scripts/verify-permissions.js",
+    "policy:headers": "node scripts/verify-security-header-policy.js",
+    "policy:check": "pnpm run policy:permissions && pnpm run policy:headers",
     "test": "vitest run",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare"
@@ -24,6 +30,7 @@
     "webextension-polyfill": "0.12.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -31,8 +38,12 @@
     "@types/react-dom": "^19.2.3",
     "@types/webextension-polyfill": "0.12.5",
     "@wxt-dev/module-react": "^1.1.5",
+    "eslint": "^10.4.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.60.0",
     "vitest": "^4.0.8",
     "wxt": "^0.20.26"
   }

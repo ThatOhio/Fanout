@@ -25,19 +25,50 @@ export function buildDefaultProvidersByColumn(): ProvidersByColumn {
   return { ...DEFAULT_PROVIDERS_BY_COLUMN };
 }
 
+function isSearchProvider(value: string): value is SearchProvider {
+  return (SEARCH_PROVIDERS as readonly string[]).includes(value);
+}
+
+function resolveColumnProvider(
+  providersByColumn: ProvidersByColumn | undefined,
+  columnIndex: number,
+): SearchProvider {
+  const provider = providersByColumn?.[columnIndex];
+  if (provider && isSearchProvider(provider)) {
+    return provider;
+  }
+
+  return DEFAULT_PROVIDERS_BY_COLUMN[columnIndex];
+}
+
 function ensureProvidersForColumnCount(
-  providersByColumn: ProvidersByColumn,
+  providersByColumn: ProvidersByColumn | undefined,
   columnCount: (typeof COLUMN_COUNTS)[number],
 ): ProvidersByColumn {
-  const nextProvidersByColumn = { ...providersByColumn };
+  const nextProvidersByColumn = { ...(providersByColumn ?? {}) };
 
   for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
-    if (!nextProvidersByColumn[columnIndex]) {
+    const provider = nextProvidersByColumn[columnIndex];
+    if (!provider || !isSearchProvider(provider)) {
       nextProvidersByColumn[columnIndex] = DEFAULT_PROVIDERS_BY_COLUMN[columnIndex];
     }
   }
 
   return nextProvidersByColumn;
+}
+
+function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellState {
+  const columnCount = initialState?.columnCount ?? DEFAULT_STATE.columnCount;
+
+  return {
+    ...DEFAULT_STATE,
+    ...initialState,
+    columnCount,
+    providersByColumn: ensureProvidersForColumnCount(
+      initialState?.providersByColumn ?? DEFAULT_STATE.providersByColumn,
+      columnCount,
+    ),
+  };
 }
 
 export type WorkspaceShellState = {
@@ -77,6 +108,14 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
   }
 
   if (action.type === 'setColumnProvider') {
+    if (action.columnIndex < 1 || action.columnIndex > 4) {
+      return state;
+    }
+
+    if (!isSearchProvider(action.provider)) {
+      return state;
+    }
+
     return {
       ...state,
       providersByColumn: {
@@ -97,7 +136,7 @@ type WorkspaceShellProps = {
 };
 
 export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
-  const [state, dispatch] = useReducer(workspaceShellReducer, initialState ?? DEFAULT_STATE);
+  const [state, dispatch] = useReducer(workspaceShellReducer, initialState, buildInitialState);
   const { columnCount, commandInput, providersByColumn } = state;
 
   return (
@@ -157,12 +196,17 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                 <select
                   id={`column-provider-${index + 1}`}
                   className="column-provider-select"
-                  value={providersByColumn[index + 1]}
+                  value={resolveColumnProvider(providersByColumn, index + 1)}
                   onChange={(event) => {
+                    const provider = event.target.value;
+                    if (!isSearchProvider(provider)) {
+                      return;
+                    }
+
                     dispatch({
                       type: 'setColumnProvider',
                       columnIndex: index + 1,
-                      provider: event.target.value as SearchProvider,
+                      provider,
                     });
                   }}>
                   {SEARCH_PROVIDERS.map((provider) => (

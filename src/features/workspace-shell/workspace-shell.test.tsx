@@ -127,6 +127,39 @@ describe('WorkspaceShell', () => {
     expect(nextState.providersByColumn[4]).toBe('bing');
   });
 
+  it('ignores invalid setColumnProvider actions in reducer state', () => {
+    const invalidIndex = workspaceShellReducer(baseState, {
+      type: 'setColumnProvider',
+      columnIndex: 0,
+      provider: 'bing',
+    });
+    const invalidProvider = workspaceShellReducer(baseState, {
+      type: 'setColumnProvider',
+      columnIndex: 1,
+      provider: 'yahoo' as WorkspaceShellState['providersByColumn'][number],
+    });
+
+    expect(invalidIndex).toBe(baseState);
+    expect(invalidProvider).toBe(baseState);
+  });
+
+  it('repairs invalid provider values when column count changes', () => {
+    const invalidState: WorkspaceShellState = {
+      ...baseState,
+      providersByColumn: {
+        ...buildDefaultProvidersByColumn(),
+        1: 'invalid' as WorkspaceShellState['providersByColumn'][number],
+      },
+    };
+
+    const nextState = workspaceShellReducer(invalidState, {
+      type: 'setColumnCount',
+      columnCount: 2,
+    });
+
+    expect(nextState.providersByColumn[1]).toBe('google');
+  });
+
   it('preserves active column provider selections through 2->3->4->2 transitions', () => {
     const updatedColumnOne = workspaceShellReducer(baseState, {
       type: 'setColumnProvider',

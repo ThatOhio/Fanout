@@ -21,6 +21,7 @@ const baseState: WorkspaceShellState = {
     replaceNewTab: false,
     replaceAddressBarSearch: false,
   },
+  isSettingsOpen: false,
   dispatchByColumn: {},
 };
 
@@ -846,6 +847,256 @@ describe('WorkspaceShell', () => {
 
       await user.click(screen.getByRole('button', { name: 'Retry column 1' }));
       expect(screen.getByRole('status', { name: 'Column 1 status' })).toHaveTextContent('Pending');
+    });
+  });
+
+  describe('settings panel', () => {
+    it('toggles isSettingsOpen via openSettings and closeSettings reducer actions', () => {
+      const opened = workspaceShellReducer(baseState, { type: 'openSettings' });
+      const closed = workspaceShellReducer(opened, { type: 'closeSettings' });
+
+      expect(opened.isSettingsOpen).toBe(true);
+      expect(closed.isSettingsOpen).toBe(false);
+    });
+
+    it('updates an individual setting flag without mutating others via updateSetting', () => {
+      const nextState = workspaceShellReducer(baseState, {
+        type: 'updateSetting',
+        key: 'darkMode',
+        value: false,
+      });
+
+      expect(nextState.settings).toEqual({
+        darkMode: false,
+        replaceNewTab: false,
+        replaceAddressBarSearch: false,
+      });
+    });
+
+    it('never starts the panel open even when initialState requests it', () => {
+      render(<WorkspaceShell initialState={{ ...baseState, isSettingsOpen: true }} />);
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('does not render the settings panel when closed', () => {
+      render(<WorkspaceShell />);
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('does not render the address-bar search toggle (Story 1.7 scope)', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+
+      expect(screen.queryByLabelText(/address bar/i)).not.toBeInTheDocument();
+    });
+
+    it('opens settings panel and moves focus to close button', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+
+      expect(screen.getByRole('dialog', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Close settings')).toHaveFocus();
+    });
+
+    it('closes settings via close button and returns focus to settings button', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.click(screen.getByLabelText('Close settings'));
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /open settings/i })).toHaveFocus();
+    });
+
+    it('closes settings on Escape and returns focus to settings button', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /open settings/i })).toHaveFocus();
+    });
+
+    it('applies data-theme=light when dark mode is toggled off', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'dark');
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.click(screen.getByLabelText('Dark mode'));
+
+      expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
+    });
+
+    it('persists the replace-new-tab toggle through debounced storage writes', async () => {
+      vi.useFakeTimers();
+      const set = vi.fn().mockResolvedValue(undefined);
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({}),
+        set,
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      fireEvent.click(screen.getByRole('button', { name: /open settings/i }));
+      fireEvent.click(screen.getByLabelText('Replace new tab page'));
+      vi.advanceTimersByTime(500);
+      await vi.runAllTimersAsync();
+
+      expect(set).toHaveBeenCalled();
+      const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
+      expect(persistedPayload?.settings).toMatchObject({
+        darkMode: true,
+        replaceNewTab: true,
+        replaceAddressBarSearch: false,
+      });
+    });
+
+    it('preserves workspace context immediately when settings panel opens', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: '3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Shared query' }), 'best coffee beans');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Column 2 provider' }), 'bing');
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+
+      expect(getDisplayedColumnCount()).toHaveTextContent('3');
+      expect(screen.getByRole('textbox', { name: 'Shared query' })).toHaveValue('best coffee beans');
+      expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toHaveValue('bing');
+    });
+
+    it('preserves workspace context across an open and close cycle', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: '3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Shared query' }), 'best coffee beans');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Column 2 provider' }), 'bing');
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.click(screen.getByLabelText('Close settings'));
+
+      expect(getDisplayedColumnCount()).toHaveTextContent('3');
+      expect(screen.getByRole('textbox', { name: 'Shared query' })).toHaveValue('best coffee beans');
+      expect(screen.getByRole('combobox', { name: 'Column 2 provider' })).toHaveValue('bing');
+    });
+
+    it('restores dark mode preference after unmount and remount', async () => {
+      let storedPayload: unknown;
+      const set = vi.fn().mockImplementation(async (items: Record<string, unknown>) => {
+        storedPayload = items.fanout_workspace_preferences;
+      });
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({}),
+        set,
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const user = userEvent.setup();
+      const { unmount } = render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.click(screen.getByLabelText('Dark mode'));
+      await waitFor(() => expect(set).toHaveBeenCalled());
+      unmount();
+
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({
+          fanout_workspace_preferences: storedPayload,
+        }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
+      });
+    });
+
+    it('restores replace-new-tab preference after unmount and remount', async () => {
+      let storedPayload: unknown;
+      const set = vi.fn().mockImplementation(async (items: Record<string, unknown>) => {
+        storedPayload = items.fanout_workspace_preferences;
+      });
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({}),
+        set,
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const user = userEvent.setup();
+      const { unmount } = render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      await user.click(screen.getByLabelText('Replace new tab page'));
+      await waitFor(() => expect(set).toHaveBeenCalled());
+      unmount();
+
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({
+          fanout_workspace_preferences: storedPayload,
+        }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+      expect(await screen.findByLabelText('Replace new tab page')).toBeChecked();
+    });
+
+    it('does not block preference hydration when settings is opened before storage load completes', async () => {
+      let resolveGet: ((value: Record<string, unknown>) => void) | undefined;
+      const getPromise = new Promise<Record<string, unknown>>((resolve) => {
+        resolveGet = resolve;
+      });
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockReturnValue(getPromise),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+
+      resolveGet?.({
+        fanout_workspace_preferences: {
+          schemaVersion: 1,
+          columnCount: 3,
+          providersByColumn: {
+            1: 'bing',
+            2: 'google',
+            3: 'duckduckgo',
+          },
+          settings: {
+            darkMode: false,
+            replaceNewTab: true,
+            replaceAddressBarSearch: false,
+          },
+        },
+      });
+
+      expect(await screen.findByRole('region', { name: 'Column 3' })).toBeInTheDocument();
+      expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
+      expect(screen.getByLabelText('Replace new tab page')).toBeChecked();
     });
   });
 });

@@ -33,6 +33,12 @@ describe('shouldInterceptNavigation', () => {
     ).toEqual({ intercept: false });
   });
 
+  it('passes through when the typed query is a hostname with port (AC3)', () => {
+    expect(
+      shouldInterceptNavigation('https://www.google.com/search?q=example.com%3A8080', FANOUT_NEWTAB_URL, true),
+    ).toEqual({ intercept: false });
+  });
+
   it('does not intercept a direct navigation to an explicit URL', () => {
     // Direct URL navigation never matches a search-engine host, so it is not a
     // recognized search URL and must pass through.

@@ -49,13 +49,17 @@ export function shouldInterceptNavigation(
   return { intercept: true, query };
 }
 
+const navigationGenerationByTab = new Map<number, number>();
+
 function setupAddressBarRouting() {
   // Feature-detect: only active once webNavigation/tabs permissions are granted (Story 3.1).
   const runtimeBrowser = browser as typeof browser & {
     webNavigation?: typeof browser.webNavigation;
+    tabs?: typeof browser.tabs;
   };
   const webNav = runtimeBrowser.webNavigation;
-  if (!webNav?.onBeforeNavigate) {
+  const tabsApi = runtimeBrowser.tabs;
+  if (!webNav?.onBeforeNavigate || !tabsApi?.update) {
     return;
   }
 
@@ -66,21 +70,32 @@ function setupAddressBarRouting() {
         return;
       }
 
-      const fanoutNewtabUrl = browser.runtime.getURL('/newtab.html');
-      const { preferences } = await loadWorkspacePreferences();
-      const result = shouldInterceptNavigation(
-        details.url,
-        fanoutNewtabUrl,
-        preferences.settings.replaceAddressBarSearch,
-      );
+      const generation = (navigationGenerationByTab.get(details.tabId) ?? 0) + 1;
+      navigationGenerationByTab.set(details.tabId, generation);
 
-      if (!result.intercept) {
+      try {
+        const fanoutNewtabUrl = browser.runtime.getURL('/newtab.html');
+        const { preferences } = await loadWorkspacePreferences();
+        const result = shouldInterceptNavigation(
+          details.url,
+          fanoutNewtabUrl,
+          preferences.settings.replaceAddressBarSearch,
+        );
+
+        if (!result.intercept) {
+          return;
+        }
+
+        if (navigationGenerationByTab.get(details.tabId) !== generation) {
+          return;
+        }
+
+        await tabsApi.update(details.tabId, {
+          url: `${fanoutNewtabUrl}?q=${encodeURIComponent(result.query)}`,
+        });
+      } catch {
         return;
       }
-
-      await browser.tabs.update(details.tabId, {
-        url: `${fanoutNewtabUrl}?q=${encodeURIComponent(result.query)}`,
-      });
     },
     {
       url: KNOWN_SEARCH_HOSTNAMES.map((host) => ({ hostEquals: host })),

@@ -7,10 +7,13 @@ describe('isExplicitUrl', () => {
     ['http://example.com/path?q=foo', 'explicit scheme with path'],
     ['ftp://files.example.com', 'non-http scheme'],
     ['example.com', 'hostname pattern, no spaces'],
+    ['example.com:8080', 'hostname with port, no scheme'],
     ['sub.example.co.uk', 'multi-level TLD'],
     ['localhost', 'localhost'],
     ['localhost:3000', 'localhost with port'],
     ['192.168.1.1', 'IPv4 address'],
+    ['2001:db8::1', 'IPv6 address'],
+    ['[::1]:8080', 'bracketed IPv6 with port'],
   ];
 
   it.each(passThroughCases)('treats %s as an explicit URL (%s)', (input) => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,6 +6,7 @@ import {
   COLUMN_COUNTS,
   SEARCH_PROVIDERS,
   WorkspaceShell,
+  WORKSPACE_HYDRATION_TIMEOUT_MS,
   buildSearchProviderUrl,
   workspaceShellReducer,
   buildDefaultProvidersByColumn,
@@ -1224,6 +1225,29 @@ describe('WorkspaceShell', () => {
       });
       expect(screen.queryByTitle(/results for/)).not.toBeInTheDocument();
       expect(screen.getByText('Column 1 Placeholder')).toBeInTheDocument();
+    });
+
+    it('auto-dispatches the routed query when hydration hangs past the timeout', async () => {
+      vi.useFakeTimers();
+
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockReturnValue(new Promise<Record<string, unknown>>(() => {})),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell initialQuery="best coffee beans" />);
+
+      await act(() => {
+        vi.advanceTimersByTime(WORKSPACE_HYDRATION_TIMEOUT_MS);
+      });
+
+      expect(screen.getByTitle('Google results for best coffee beans')).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Address-bar routing notice' })).toHaveTextContent(
+        /enter your query above and press Enter to search manually/i,
+      );
+
+      vi.useRealTimers();
     });
 
     it('shows the routing fallback notice when the routed query fails on every column', () => {

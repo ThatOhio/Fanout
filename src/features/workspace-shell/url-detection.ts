@@ -38,6 +38,21 @@ export function isExplicitUrl(input: string): boolean {
     return true;
   }
 
+  // Bracketed IPv6 literal with optional port/path ([2001:db8::1]:8080)
+  if (/^\[[0-9a-f:]+\](:\d+)?([/?#].*)?$/i.test(trimmed)) {
+    return true;
+  }
+
+  // Unbracketed IPv6 literal with optional port/path (2001:db8::1, ::1)
+  if (/^[0-9a-f:]+:[0-9a-f:]+(:\d+)?([/?#].*)?$/i.test(trimmed)) {
+    return true;
+  }
+
+  // hostname.tld:port with no scheme (example.com:8080)
+  if (!trimmed.includes(' ') && /^[a-z0-9-]+(\.[a-z0-9-]+)+:\d+([/?#].*)?$/i.test(trimmed)) {
+    return true;
+  }
+
   // hostname.tld pattern with no spaces (example.com, sub.example.co.uk)
   if (!trimmed.includes(' ') && /^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(trimmed)) {
     return true;

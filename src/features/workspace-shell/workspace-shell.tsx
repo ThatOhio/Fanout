@@ -205,6 +205,7 @@ const DEFAULT_STATE: WorkspaceShellState = {
 };
 
 const COLUMN_DISPATCH_TIMEOUT_MS = 10_000;
+export const WORKSPACE_HYDRATION_TIMEOUT_MS = 5_000;
 
 export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
   if (action.type === 'setColumnCount') {
@@ -409,15 +410,18 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
 
   useEffect(() => {
     let isActive = true;
+    let didAutoDispatchInitialQuery = false;
+    let didCompleteHydration = false;
     // Auto-dispatch the address-bar routed query AFTER hydration so the user's
     // saved providers are used. Fires once regardless of hydration success.
     const trimmedInitialQuery = initialQuery?.trim();
 
     const autoDispatchInitialQuery = () => {
-      if (!trimmedInitialQuery) {
+      if (!trimmedInitialQuery || didAutoDispatchInitialQuery) {
         return;
       }
 
+      didAutoDispatchInitialQuery = true;
       dispatch({
         type: 'submitQuery',
         query: trimmedInitialQuery,
@@ -425,13 +429,32 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
       });
     };
 
+    const hydrationTimeoutId = window.setTimeout(() => {
+      if (!isActive || didCompleteHydration) {
+        return;
+      }
+
+      autoDispatchInitialQuery();
+
+      if (trimmedInitialQuery) {
+        dispatch({
+          type: 'setRoutingError',
+          message:
+            'Auto-search from address bar could not complete. Enter your query above and press Enter to search manually.',
+        });
+      }
+    }, WORKSPACE_HYDRATION_TIMEOUT_MS);
+
     void loadWorkspacePreferences()
       .then(({ preferences, warning, didLoadPersistedValue }) => {
         if (!isActive) {
           return;
         }
 
+        didCompleteHydration = true;
+        window.clearTimeout(hydrationTimeoutId);
         setRestoreNotice(warning);
+        dispatch({ type: 'setRoutingError', message: null });
 
         if (
           didLoadPersistedValue &&
@@ -451,6 +474,9 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
           return;
         }
 
+        didCompleteHydration = true;
+        window.clearTimeout(hydrationTimeoutId);
+        dispatch({ type: 'setRoutingError', message: null });
         setRestoreNotice(WORKSPACE_RESTORE_WARNING_MESSAGE);
         // Routing must remain usable even when hydration falls back to defaults.
         autoDispatchInitialQuery();
@@ -458,6 +484,7 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
 
     return () => {
       isActive = false;
+      window.clearTimeout(hydrationTimeoutId);
     };
   }, [initialQuery]);
 

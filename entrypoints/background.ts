@@ -7,15 +7,10 @@ import {
 } from '../src/features/workspace-shell/url-detection';
 import { loadWorkspacePreferences } from '../src/features/workspace-shell/workspace-preferences-storage';
 
-// TODO: Add 'webNavigation' and 'tabs' to wxt.config.ts manifest permissions
-// after the permission rationale is documented and approved in future 
-// Until then, setupAddressBarRouting() is a no-op at runtime
-// because browser.webNavigation is undefined without the permission.
-
 /**
- * Pure decision function: determines whether a navigation should be intercepted
- * and routed to Fanout. Single authority for the intercept decision so the event
- * handler stays thin and the logic is unit-testable without browser API mocks.
+ * Decides whether a navigation should be intercepted and routed to Fanout.
+ * Kept out of the event handler so it can be unit-tested without mocking the
+ * browser APIs.
  */
 export function shouldInterceptNavigation(
   navigationUrl: string,
@@ -52,7 +47,7 @@ export function shouldInterceptNavigation(
 const navigationGenerationByTab = new Map<number, number>();
 
 function setupAddressBarRouting() {
-  // Feature-detect: only active once webNavigation/tabs permissions are granted (Story 3.1).
+  // Bail out if these APIs aren't available at runtime.
   const runtimeBrowser = browser as typeof browser & {
     webNavigation?: typeof browser.webNavigation;
     tabs?: typeof browser.tabs;
@@ -65,7 +60,7 @@ function setupAddressBarRouting() {
 
   webNav.onBeforeNavigate.addListener(
     async (details) => {
-      // Top-level navigations only — never intercept iframe navigation.
+      // Top-level navigations only, skip iframes.
       if (details.frameId !== 0) {
         return;
       }

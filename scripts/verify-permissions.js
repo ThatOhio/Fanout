@@ -13,6 +13,7 @@ const BROAD_PERMISSION_PATTERNS = [
   { pattern: 'http://*/*', regex: /http:\/\/\*\/\*/i, message: 'Detected broad http wildcard host scope.' },
   { pattern: 'https://*/*', regex: /https:\/\/\*\/\*/i, message: 'Detected broad https wildcard host scope.' },
 ];
+const WXT_CONFIG_FILES = new Set(['wxt.config.ts', 'wxt.config.js']);
 
 function hasAllowedExtension(filePath) {
   for (const extension of FILE_EXTENSIONS) {
@@ -100,10 +101,10 @@ export function findBroadPermissionViolations(records) {
 }
 
 /**
- * Checks that every permission declared in wxt.config.ts has a corresponding
+ * Checks that every permission declared in WXT config has a corresponding
  * section in the permission rationale document.
  *
- * @param {string} wxtConfigContent - Content of wxt.config.ts
+ * @param {string} wxtConfigContent - Content of a WXT config file
  * @param {string} rationaleDocContent - Content of permissions-rationale.md
  * @returns {Array<{ permission: string; message: string }>}
  */
@@ -118,7 +119,7 @@ export function findUnmappedPermissions(wxtConfigContent, rationaleDocContent) {
   );
 
   const approvedPermissions = new Set(
-    [...rationaleDocContent.matchAll(/^## (\w+)/gm)].map((m) => m[1]),
+    [...rationaleDocContent.matchAll(/^##\s+([^\r\n]+?)\s*$/gm)].map((m) => m[1]),
   );
 
   return declaredPermissions
@@ -127,6 +128,24 @@ export function findUnmappedPermissions(wxtConfigContent, rationaleDocContent) {
       permission,
       message: `Permission '${permission}' declared in manifest has no entry in permissions-rationale.md.`,
     }));
+}
+
+/**
+ * Checks all supported WXT config files found in the scanned project records.
+ *
+ * @param {Array<{ path: string; content: string }>} records - Scanned project records
+ * @param {string} rationaleDocContent - Content of permissions-rationale.md
+ * @returns {Array<{ path: string; permission: string; message: string }>}
+ */
+export function findUnmappedPermissionViolations(records, rationaleDocContent) {
+  return records
+    .filter((record) => WXT_CONFIG_FILES.has(record.path))
+    .flatMap((record) =>
+      findUnmappedPermissions(record.content, rationaleDocContent).map((violation) => ({
+        ...violation,
+        path: record.path,
+      })),
+    );
 }
 
 function run() {
@@ -163,14 +182,12 @@ function run() {
     return;
   }
 
-  const wxtConfigRecord = records.find((r) => r.path === 'wxt.config.ts');
-  const wxtConfigContent = wxtConfigRecord?.content ?? '';
-  const unmappedViolations = findUnmappedPermissions(wxtConfigContent, rationaleDocContent);
+  const unmappedViolations = findUnmappedPermissionViolations(records, rationaleDocContent);
 
   if (unmappedViolations.length > 0) {
     console.error('Permission rationale check failed:');
     for (const violation of unmappedViolations) {
-      console.error(`- ${violation.message}`);
+      console.error(`- ${violation.path}: ${violation.message}`);
     }
     process.exitCode = 1;
     return;

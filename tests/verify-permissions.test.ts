@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   findBroadPermissionViolations,
+  findUnmappedPermissionViolations,
   findUnmappedPermissions,
 } from '../scripts/verify-permissions';
 
@@ -97,5 +98,31 @@ describe('findUnmappedPermissions rationale coverage guard', () => {
     );
     expect(violations).toHaveLength(1);
     expect(violations[0].permission).toBe('missing');
+  });
+
+  it('handles permission headings with punctuation', () => {
+    const violations = findUnmappedPermissions(
+      `permissions: ['identity.email']`,
+      `## identity.email\n\nrationale`,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('checks permissions declared in supported JavaScript WXT config files', () => {
+    const violations = findUnmappedPermissionViolations(
+      [
+        {
+          path: 'wxt.config.js',
+          content: `export default defineConfig({ manifest: { permissions: ['tabs', 'unlisted'] } })`,
+        },
+      ],
+      `## tabs\n\nrationale`,
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      path: 'wxt.config.js',
+      permission: 'unlisted',
+    });
   });
 });

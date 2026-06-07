@@ -4,7 +4,7 @@ This is where I write down every permission Fanout asks for and why, so anyone l
 
 Fanout asks for as little as possible. It declares no host permissions, so it can't read or change the pages you visit. The one feature that needs more than the basics is the optional address-bar search, and that's off until you turn it on.
 
-There's a check wired into CI so this file stays in sync with the manifest. `pnpm policy:check` runs `scripts/verify-permissions.js`, which pulls the `permissions` array out of `wxt.config.ts` and makes sure each one has a matching `##` heading here. If I add a permission and forget to explain it, the build fails. The check only reads the first word after each `##`, so a permission's heading has to be a single word like `## webNavigation`. Anything more detailed goes under `###`.
+There's a check wired into CI so this file stays in sync with the manifest. `pnpm policy:check` runs `scripts/verify-permissions.js`, which pulls the `permissions` array out of the WXT config and makes sure each one has a matching `##` heading here. If I add a permission and forget to explain it, the build fails. A permission's heading should be only the permission name, like `## webNavigation`. Anything more detailed goes under `###`.
 
 To add a permission: write the section here, add it to the manifest, then run `pnpm policy:check`.
 

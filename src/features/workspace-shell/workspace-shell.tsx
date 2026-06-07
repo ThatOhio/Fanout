@@ -642,7 +642,7 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
       <main className="workspace-region">
         <h1>Fanout Workspace</h1>
         <p>
-          Mode: <strong>Search</strong> | Columns: <strong>{columnCount}</strong>
+          Columns: <strong>{columnCount}</strong>
         </p>
         {restoreNotice ? (
           <p

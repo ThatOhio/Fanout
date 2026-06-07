@@ -28,9 +28,9 @@ const baseState: WorkspaceShellState = {
 };
 
 function getDisplayedColumnCount() {
-  const statusLine = screen.getByText(/Mode:/).closest('p');
+  const statusLine = screen.getByText(/Columns:/).closest('p');
   expect(statusLine).not.toBeNull();
-  return within(statusLine as HTMLElement).getAllByRole('strong')[1];
+  return within(statusLine as HTMLElement).getByRole('strong');
 }
 
 type BrowserStorageLocalMock = {
@@ -86,7 +86,6 @@ describe('WorkspaceShell', () => {
 
     expect(markup).toContain('data-testid="command-bar"');
     expect(markup).toContain('aria-label="Shared query"');
-    expect(markup).toContain('Mode: <strong>Search</strong>');
     expect(markup).toContain('aria-label="Column count controls"');
     expect(markup).toContain('Columns: <strong>2</strong>');
     expect(markup).toContain('aria-label="Open settings"');

@@ -86,6 +86,7 @@ describe('WorkspaceShell', () => {
 
     expect(markup).toContain('data-testid="command-bar"');
     expect(markup).toContain('aria-label="Shared query"');
+    expect(markup).not.toContain('Mode:');
     expect(markup).toContain('aria-label="Column count controls"');
     expect(markup).toContain('Columns: <strong>2</strong>');
     expect(markup).toContain('aria-label="Open settings"');

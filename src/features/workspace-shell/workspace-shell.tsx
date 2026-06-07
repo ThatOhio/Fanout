@@ -25,7 +25,7 @@ export type ColumnDispatchState = {
   errorMessage?: string;
 };
 export type DispatchByColumn = Record<number, ColumnDispatchState | undefined>;
-export type UiExposedWorkspaceSettingKey = 'darkMode' | 'replaceNewTab';
+export type UiExposedWorkspaceSettingKey = 'darkMode' | 'replaceNewTab' | 'replaceAddressBarSearch';
 export type WorkspaceShellState = {
   columnCount: (typeof COLUMN_COUNTS)[number];
   commandInput: string;
@@ -33,6 +33,7 @@ export type WorkspaceShellState = {
   settings: PersistedWorkspaceSettings;
   isSettingsOpen: boolean;
   dispatchByColumn: DispatchByColumn;
+  routingError: string | null;
 };
 
 const PROVIDER_LABELS: Record<SearchProvider, string> = {
@@ -107,13 +108,15 @@ function ensureProvidersForColumnCount(
   return nextProvidersByColumn;
 }
 
-function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellState {
+function buildInitialState(initialState?: WorkspaceShellState, initialQuery?: string): WorkspaceShellState {
   const columnCount = initialState?.columnCount ?? DEFAULT_STATE.columnCount;
+  const prefilledQuery = initialQuery?.trim() ? initialQuery : undefined;
 
   return {
     ...DEFAULT_STATE,
     ...initialState,
     columnCount,
+    commandInput: prefilledQuery ?? initialState?.commandInput ?? DEFAULT_STATE.commandInput,
     providersByColumn: ensureProvidersForColumnCount(
       initialState?.providersByColumn ?? DEFAULT_STATE.providersByColumn,
       columnCount,
@@ -124,6 +127,8 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
     },
     isSettingsOpen: false,
     dispatchByColumn: { ...(initialState?.dispatchByColumn ?? DEFAULT_STATE.dispatchByColumn) },
+    // Transient UI state: never restored from persisted/provided state.
+    routingError: null,
   };
 }
 
@@ -186,7 +191,8 @@ type WorkspaceShellAction =
       type: 'updateSetting';
       key: UiExposedWorkspaceSettingKey;
       value: boolean;
-    };
+    }
+  | { type: 'setRoutingError'; message: string | null };
 
 const DEFAULT_STATE: WorkspaceShellState = {
   columnCount: 2,
@@ -195,9 +201,11 @@ const DEFAULT_STATE: WorkspaceShellState = {
   settings: { ...DEFAULT_WORKSPACE_PREFERENCES.settings },
   isSettingsOpen: false,
   dispatchByColumn: {},
+  routingError: null,
 };
 
 const COLUMN_DISPATCH_TIMEOUT_MS = 10_000;
+export const WORKSPACE_HYDRATION_TIMEOUT_MS = 5_000;
 
 export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
   if (action.type === 'setColumnCount') {
@@ -356,6 +364,10 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
     };
   }
 
+  if (action.type === 'setRoutingError') {
+    return { ...state, routingError: action.message };
+  }
+
   return {
     ...state,
     commandInput: action.commandInput,
@@ -364,11 +376,15 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
 
 type WorkspaceShellProps = {
   initialState?: WorkspaceShellState;
+  initialQuery?: string;
 };
 
-export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
-  const [state, dispatch] = useReducer(workspaceShellReducer, initialState, buildInitialState);
-  const { columnCount, commandInput, providersByColumn, settings, isSettingsOpen, dispatchByColumn } = state;
+export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellProps = {}) {
+  const [state, dispatch] = useReducer(workspaceShellReducer, initialState, (seed) =>
+    buildInitialState(seed, initialQuery),
+  );
+  const { columnCount, commandInput, providersByColumn, settings, isSettingsOpen, dispatchByColumn, routingError } =
+    state;
   const providerSelectRefs = useRef<Record<number, HTMLSelectElement | null>>({});
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPanelCloseBtnRef = useRef<HTMLButtonElement>(null);
@@ -394,6 +410,40 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
 
   useEffect(() => {
     let isActive = true;
+    let didAutoDispatchInitialQuery = false;
+    let didCompleteHydration = false;
+    // Auto-dispatch the address-bar routed query AFTER hydration so the user's
+    // saved providers are used. Fires once regardless of hydration success.
+    const trimmedInitialQuery = initialQuery?.trim();
+
+    const autoDispatchInitialQuery = () => {
+      if (!trimmedInitialQuery || didAutoDispatchInitialQuery) {
+        return;
+      }
+
+      didAutoDispatchInitialQuery = true;
+      dispatch({
+        type: 'submitQuery',
+        query: trimmedInitialQuery,
+        requestId: createRequestId(),
+      });
+    };
+
+    const hydrationTimeoutId = window.setTimeout(() => {
+      if (!isActive || didCompleteHydration) {
+        return;
+      }
+
+      autoDispatchInitialQuery();
+
+      if (trimmedInitialQuery) {
+        dispatch({
+          type: 'setRoutingError',
+          message:
+            'Auto-search from address bar could not complete. Enter your query above and press Enter to search manually.',
+        });
+      }
+    }, WORKSPACE_HYDRATION_TIMEOUT_MS);
 
     void loadWorkspacePreferences()
       .then(({ preferences, warning, didLoadPersistedValue }) => {
@@ -401,7 +451,10 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           return;
         }
 
+        didCompleteHydration = true;
+        window.clearTimeout(hydrationTimeoutId);
         setRestoreNotice(warning);
+        dispatch({ type: 'setRoutingError', message: null });
 
         if (
           didLoadPersistedValue &&
@@ -413,19 +466,27 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
             preferences,
           });
         }
+
+        autoDispatchInitialQuery();
       })
       .catch(() => {
         if (!isActive) {
           return;
         }
 
+        didCompleteHydration = true;
+        window.clearTimeout(hydrationTimeoutId);
+        dispatch({ type: 'setRoutingError', message: null });
         setRestoreNotice(WORKSPACE_RESTORE_WARNING_MESSAGE);
+        // Routing must remain usable even when hydration falls back to defaults.
+        autoDispatchInitialQuery();
       });
 
     return () => {
       isActive = false;
+      window.clearTimeout(hydrationTimeoutId);
     };
-  }, []);
+  }, [initialQuery]);
 
   useEffect(() => {
     if (!hasMountedPersistenceEffect.current) {
@@ -489,6 +550,14 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
     }
   }, [isSettingsOpen]);
 
+  // Address-bar routing failed if a routed query was provided but every active
+  // column ended in error. Derived (not stored) so it always reflects state.
+  const hasRoutingFailure =
+    Boolean(initialQuery?.trim()) &&
+    Object.keys(dispatchByColumn).length > 0 &&
+    Object.values(dispatchByColumn).every((columnDispatch) => columnDispatch?.status === 'error');
+  const showRoutingFallback = hasRoutingFailure || routingError !== null;
+
   return (
     <div
       className="workspace-shell"
@@ -546,6 +615,15 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           ))}
         </div>
 
+        {settings.replaceAddressBarSearch ? (
+          <span
+            className="routing-active-badge"
+            aria-label="Address-bar routing is on"
+            title="Address-bar searches are routed to Fanout">
+            Routing: on
+          </span>
+        ) : null}
+
         <button
           ref={settingsButtonRef}
           className="settings-button"
@@ -573,6 +651,16 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
             aria-live="polite"
             aria-label="Workspace restore notice">
             {restoreNotice}
+          </p>
+        ) : null}
+        {showRoutingFallback ? (
+          <p
+            className="routing-fallback-notice"
+            role="status"
+            aria-live="polite"
+            aria-label="Address-bar routing notice">
+            {routingError ??
+              'Auto-search from address bar could not complete. Enter your query above and press Enter to search manually.'}
           </p>
         ) : null}
         <div
@@ -768,6 +856,27 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
                   }}
                 />
               </label>
+              <div className="settings-toggle-row-group">
+                <label className="settings-toggle-row">
+                  <span className="settings-toggle-label">Use address bar for Fanout search</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.replaceAddressBarSearch}
+                    onChange={(event) => {
+                      hasUserEditedPreferences.current = true;
+                      dispatch({
+                        type: 'updateSetting',
+                        key: 'replaceAddressBarSearch',
+                        value: event.target.checked,
+                      });
+                    }}
+                  />
+                </label>
+                <p className="settings-toggle-disclosure">
+                  When on, typing a search query (not a URL) in the address bar opens Fanout instead of your
+                  browser&apos;s search engine. URLs always open normally. You can turn this off at any time.
+                </p>
+              </div>
             </div>
           </div>
         </div>

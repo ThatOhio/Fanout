@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,6 +6,7 @@ import {
   COLUMN_COUNTS,
   SEARCH_PROVIDERS,
   WorkspaceShell,
+  WORKSPACE_HYDRATION_TIMEOUT_MS,
   buildSearchProviderUrl,
   workspaceShellReducer,
   buildDefaultProvidersByColumn,
@@ -23,6 +24,7 @@ const baseState: WorkspaceShellState = {
   },
   isSettingsOpen: false,
   dispatchByColumn: {},
+  routingError: null,
 };
 
 function getDisplayedColumnCount() {
@@ -885,13 +887,66 @@ describe('WorkspaceShell', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('does not render the address-bar search toggle (Story 1.7 scope)', async () => {
+    it('renders the address-bar search toggle with always-visible disclosure copy', async () => {
       const user = userEvent.setup();
       render(<WorkspaceShell />);
 
       await user.click(screen.getByRole('button', { name: /open settings/i }));
 
-      expect(screen.queryByLabelText(/address bar/i)).not.toBeInTheDocument();
+      const toggle = screen.getByLabelText('Use address bar for Fanout search');
+      expect(toggle).toBeInTheDocument();
+      expect(toggle).toHaveAttribute('type', 'checkbox');
+      expect(
+        screen.getByText(/typing a search query \(not a URL\) in the address bar opens Fanout/i),
+      ).toBeInTheDocument();
+    });
+
+    it('defaults the address-bar search toggle to off', async () => {
+      const user = userEvent.setup();
+      render(<WorkspaceShell />);
+
+      await user.click(screen.getByRole('button', { name: /open settings/i }));
+
+      expect(screen.getByLabelText('Use address bar for Fanout search')).not.toBeChecked();
+    });
+
+    it('updateSetting toggles replaceAddressBarSearch without mutating other settings', () => {
+      const nextState = workspaceShellReducer(baseState, {
+        type: 'updateSetting',
+        key: 'replaceAddressBarSearch',
+        value: true,
+      });
+
+      expect(nextState.settings).toEqual({
+        darkMode: true,
+        replaceNewTab: false,
+        replaceAddressBarSearch: true,
+      });
+    });
+
+    it('persists the address-bar search toggle through debounced storage writes', async () => {
+      vi.useFakeTimers();
+      const set = vi.fn().mockResolvedValue(undefined);
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({}),
+        set,
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell />);
+
+      fireEvent.click(screen.getByRole('button', { name: /open settings/i }));
+      fireEvent.click(screen.getByLabelText('Use address bar for Fanout search'));
+      vi.advanceTimersByTime(500);
+      await vi.runAllTimersAsync();
+
+      expect(set).toHaveBeenCalled();
+      const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
+      expect(persistedPayload?.settings).toMatchObject({
+        darkMode: true,
+        replaceNewTab: false,
+        replaceAddressBarSearch: true,
+      });
     });
 
     it('opens settings panel and moves focus to close button', async () => {
@@ -1097,6 +1152,192 @@ describe('WorkspaceShell', () => {
       expect(await screen.findByRole('region', { name: 'Column 3' })).toBeInTheDocument();
       expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
       expect(screen.getByLabelText('Replace new tab page')).toBeChecked();
+    });
+  });
+
+  describe('address-bar routing indicator', () => {
+    it('renders the active-state badge when address-bar routing is enabled', () => {
+      render(
+        <WorkspaceShell
+          initialState={{
+            ...baseState,
+            settings: { ...baseState.settings, replaceAddressBarSearch: true },
+          }}
+        />,
+      );
+
+      expect(screen.getByLabelText('Address-bar routing is on')).toBeInTheDocument();
+    });
+
+    it('does not render the active-state badge when address-bar routing is disabled', () => {
+      render(<WorkspaceShell />);
+
+      expect(screen.queryByLabelText('Address-bar routing is on')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('address-bar routing intake and fallback', () => {
+    it('prefills the shared input with the routed query on first render', () => {
+      const markup = renderToStaticMarkup(<WorkspaceShell initialQuery="best coffee beans" />);
+
+      expect(markup).toContain('value="best coffee beans"');
+    });
+
+    it('auto-dispatches the routed query to active columns after hydration', async () => {
+      render(<WorkspaceShell initialQuery="best coffee beans" />);
+
+      expect(await screen.findByTitle('Google results for best coffee beans')).toBeInTheDocument();
+      expect(screen.getByTitle('DuckDuckGo results for best coffee beans')).toBeInTheDocument();
+    });
+
+    it('auto-dispatches the routed query using saved providers after hydration', async () => {
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockResolvedValue({
+          fanout_workspace_preferences: {
+            schemaVersion: 1,
+            columnCount: 2,
+            providersByColumn: {
+              1: 'bing',
+              2: 'brave',
+            },
+            settings: {
+              darkMode: true,
+              replaceNewTab: false,
+              replaceAddressBarSearch: true,
+            },
+          },
+        }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell initialQuery="best coffee beans" />);
+
+      expect(await screen.findByTitle('Bing results for best coffee beans')).toBeInTheDocument();
+      expect(screen.getByTitle('Brave results for best coffee beans')).toBeInTheDocument();
+    });
+
+    it('does not auto-dispatch any query when no routed query is provided', async () => {
+      render(<WorkspaceShell />);
+
+      await waitFor(() => {
+        expect(screen.queryByRole('status', { name: 'Workspace restore notice' })).not.toBeInTheDocument();
+      });
+      expect(screen.queryByTitle(/results for/)).not.toBeInTheDocument();
+      expect(screen.getByText('Column 1 Placeholder')).toBeInTheDocument();
+    });
+
+    it('auto-dispatches the routed query when hydration hangs past the timeout', async () => {
+      vi.useFakeTimers();
+
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockReturnValue(new Promise<Record<string, unknown>>(() => {})),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      render(<WorkspaceShell initialQuery="best coffee beans" />);
+
+      await act(() => {
+        vi.advanceTimersByTime(WORKSPACE_HYDRATION_TIMEOUT_MS);
+      });
+
+      expect(screen.getByTitle('Google results for best coffee beans')).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Address-bar routing notice' })).toHaveTextContent(
+        /enter your query above and press Enter to search manually/i,
+      );
+
+      vi.useRealTimers();
+    });
+
+    it('shows the routing fallback notice when the routed query fails on every column', () => {
+      // A never-resolving storage read keeps the hydration effect from
+      // overwriting the seeded all-error dispatch state during the test.
+      installBrowserStorageLocalMock({
+        get: vi.fn().mockReturnValue(new Promise<Record<string, unknown>>(() => {})),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const erroredState: WorkspaceShellState = {
+        ...baseState,
+        dispatchByColumn: {
+          1: {
+            status: 'error',
+            query: 'best coffee beans',
+            provider: 'google',
+            requestId: 'request-1',
+            pendingStartedAt: 0,
+            errorMessage: 'Could not load Google results.',
+          },
+          2: {
+            status: 'error',
+            query: 'best coffee beans',
+            provider: 'duckduckgo',
+            requestId: 'request-1',
+            pendingStartedAt: 0,
+            errorMessage: 'Could not load DuckDuckGo results.',
+          },
+        },
+      };
+
+      render(<WorkspaceShell initialState={erroredState} initialQuery="best coffee beans" />);
+
+      expect(screen.getByRole('status', { name: 'Address-bar routing notice' })).toHaveTextContent(
+        /enter your query above and press Enter to search manually/i,
+      );
+    });
+
+    it('does not show the routing fallback notice without a routed query', () => {
+      const erroredState: WorkspaceShellState = {
+        ...baseState,
+        dispatchByColumn: {
+          1: {
+            status: 'error',
+            query: 'best coffee beans',
+            provider: 'google',
+            requestId: 'request-1',
+            pendingStartedAt: 0,
+            errorMessage: 'Could not load Google results.',
+          },
+          2: {
+            status: 'error',
+            query: 'best coffee beans',
+            provider: 'duckduckgo',
+            requestId: 'request-1',
+            pendingStartedAt: 0,
+            errorMessage: 'Could not load DuckDuckGo results.',
+          },
+        },
+      };
+
+      render(<WorkspaceShell initialState={erroredState} />);
+
+      expect(screen.queryByRole('status', { name: 'Address-bar routing notice' })).not.toBeInTheDocument();
+    });
+
+    it('setRoutingError sets and clears the transient routing error message', () => {
+      const withError = workspaceShellReducer(baseState, {
+        type: 'setRoutingError',
+        message: 'Routing handoff failed.',
+      });
+      expect(withError.routingError).toBe('Routing handoff failed.');
+
+      const cleared = workspaceShellReducer(withError, {
+        type: 'setRoutingError',
+        message: null,
+      });
+      expect(cleared.routingError).toBeNull();
+    });
+
+    it('never restores routingError from provided initial state', () => {
+      render(
+        <WorkspaceShell
+          initialState={{ ...baseState, routingError: 'stale error' }}
+        />,
+      );
+
+      expect(screen.queryByRole('status', { name: 'Address-bar routing notice' })).not.toBeInTheDocument();
     });
   });
 });

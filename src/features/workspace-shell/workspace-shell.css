@@ -48,12 +48,22 @@
   position: sticky;
   top: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto auto;
+  grid-template-columns: minmax(240px, 1fr) auto auto auto;
   gap: 0.75rem;
   align-items: center;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-surface-raised);
+}
+
+.routing-active-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-accent);
 }
 
 .command-input {
@@ -96,7 +106,8 @@
   gap: 1rem;
 }
 
-.workspace-restore-notice {
+.workspace-restore-notice,
+.routing-fallback-notice {
   margin: 0;
   border: 1px solid var(--color-state-warning-border);
   border-radius: 0.45rem;
@@ -279,4 +290,16 @@
 .settings-toggle-label {
   font-size: 0.875rem;
   color: var(--color-ink-primary);
+}
+
+.settings-toggle-row-group {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.settings-toggle-disclosure {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-ink-secondary);
 }

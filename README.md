@@ -1,5 +1,5 @@
 # Fanout
-Search multiple engines side by side in a single tab. Privacy-respecting, minimal permissions, no tracking.
+Search several engines side by side in one tab. It asks for as few permissions as it can and doesn't track you.
 
 ## Local Development Setup
 
@@ -43,11 +43,13 @@ Search multiple engines side by side in a single tab. Privacy-respecting, minima
 - Browser builds: `build-chrome`, `build-firefox`, and `build-edge`.
 - Policy gates block merge when broad permissions or global header-weakening patterns are introduced.
 
-## Permission Rationale
+## Permissions
 
-Fanout follows a least-privilege posture. Policy checks enforce the following baseline rules:
+If you're reviewing what this extension can actually do, start with [`permissions-rationale.md`](./permissions-rationale.md) in the repo root. It lists every permission Fanout declares and why. A CI check (`pnpm policy:permissions`) fails the build if a manifest permission isn't documented there.
 
-- **Broad host scope is blocked** — patterns such as `<all_urls>`, `*://*/*`, and `http(s)://*/*` fail CI unless explicitly approved and documented in a future policy exception process.
-- **Header tampering is blocked** — global `webRequest.onHeadersReceived` hooks and header strip/modify patterns (for example CSP or HSTS removal) fail CI.
-- **Current scaffold scope** — the WXT starter uses default extension permissions only; no broad host permissions are declared in `wxt.config.ts` at this stage.
-- **Audit trail** — permission or header-policy exceptions must be documented in this section with rationale before merge approval.
+The short version is that Fanout keeps its access as small as it can:
+
+- No host permissions, so it can't read or change the pages you visit.
+- `webNavigation` and `tabs` are declared in `wxt.config.ts`, both for the opt-in address-bar search feature, and both are written up in `permissions-rationale.md`.
+- The policy checks block broad host patterns (`<all_urls>`, `*://*/*`, `http(s)://*/*`) and any attempt to weaken security headers like CSP or HSTS.
+- If a permission or header exception ever turns out to be necessary, it has to be documented with a reason before it can merge.

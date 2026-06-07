@@ -412,8 +412,8 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
     let isActive = true;
     let didAutoDispatchInitialQuery = false;
     let didCompleteHydration = false;
-    // Auto-dispatch the address-bar routed query AFTER hydration so the user's
-    // saved providers are used. Fires once regardless of hydration success.
+    // Run the address-bar query after hydration so it picks up the saved
+    // providers. Only fires once, whether or not hydration succeeds.
     const trimmedInitialQuery = initialQuery?.trim();
 
     const autoDispatchInitialQuery = () => {

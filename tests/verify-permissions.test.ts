@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { findBroadPermissionViolations } from '../scripts/verify-permissions';
+import {
+  findBroadPermissionViolations,
+  findUnmappedPermissionViolations,
+  findUnmappedPermissions,
+} from '../scripts/verify-permissions';
 
 describe('verify-permissions policy guard', () => {
   it('returns no violations for narrow host patterns', () => {
@@ -58,5 +62,67 @@ describe('verify-permissions policy guard', () => {
         pattern: 'http://*/*',
       }),
     );
+  });
+});
+
+describe('findUnmappedPermissions rationale coverage guard', () => {
+  it('returns no violations when all permissions are documented', () => {
+    const violations = findUnmappedPermissions(
+      `permissions: ['webNavigation', 'tabs']`,
+      `## webNavigation\n\nsome rationale\n\n## tabs\n\nsome rationale`,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('returns a violation for each undocumented permission', () => {
+    const violations = findUnmappedPermissions(
+      `permissions: ['webNavigation', 'unlisted']`,
+      `## webNavigation\n\nsome rationale`,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].permission).toBe('unlisted');
+  });
+
+  it('returns no violations when no permissions array is declared', () => {
+    const violations = findUnmappedPermissions(
+      `export default defineConfig({ modules: [] })`,
+      `## webNavigation\n\nsome rationale`,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('handles multiple permissions where some are mapped and some are not', () => {
+    const violations = findUnmappedPermissions(
+      `permissions: ['webNavigation', 'tabs', 'missing']`,
+      `## webNavigation\n\nrationale\n\n## tabs\n\nrationale`,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].permission).toBe('missing');
+  });
+
+  it('handles permission headings with punctuation', () => {
+    const violations = findUnmappedPermissions(
+      `permissions: ['identity.email']`,
+      `## identity.email\n\nrationale`,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('checks permissions declared in supported JavaScript WXT config files', () => {
+    const violations = findUnmappedPermissionViolations(
+      [
+        {
+          path: 'wxt.config.js',
+          content: `export default defineConfig({ manifest: { permissions: ['tabs', 'unlisted'] } })`,
+        },
+      ],
+      `## tabs\n\nrationale`,
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      path: 'wxt.config.js',
+      permission: 'unlisted',
+    });
   });
 });

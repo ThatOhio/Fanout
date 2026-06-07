@@ -25,6 +25,7 @@ export type ColumnDispatchState = {
   errorMessage?: string;
 };
 export type DispatchByColumn = Record<number, ColumnDispatchState | undefined>;
+export type UiExposedWorkspaceSettingKey = 'darkMode' | 'replaceNewTab';
 export type WorkspaceShellState = {
   columnCount: (typeof COLUMN_COUNTS)[number];
   commandInput: string;
@@ -183,7 +184,7 @@ type WorkspaceShellAction =
   | { type: 'closeSettings' }
   | {
       type: 'updateSetting';
-      key: keyof PersistedWorkspaceSettings;
+      key: UiExposedWorkspaceSettingKey;
       value: boolean;
     };
 
@@ -551,9 +552,9 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           type="button"
           aria-label="Open settings"
           aria-haspopup="dialog"
+          aria-controls="workspace-settings-dialog"
           aria-expanded={isSettingsOpen}
           onClick={() => {
-            hasUserEditedPreferences.current = true;
             dispatch({ type: 'openSettings' });
           }}>
           Settings
@@ -709,9 +710,10 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
 
       {isSettingsOpen ? (
         <div
+          id="workspace-settings-dialog"
           role="dialog"
           aria-modal="true"
-          aria-label="Settings"
+          aria-labelledby="workspace-settings-title"
           className="settings-panel"
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -721,7 +723,9 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           }}>
           <div className="settings-panel-card">
             <div className="settings-panel-header">
-              <h2 className="settings-panel-title">Settings</h2>
+              <h2 id="workspace-settings-title" className="settings-panel-title">
+                Settings
+              </h2>
               <button
                 ref={settingsPanelCloseBtnRef}
                 type="button"

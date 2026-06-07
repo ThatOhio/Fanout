@@ -30,6 +30,7 @@ export type WorkspaceShellState = {
   commandInput: string;
   providersByColumn: ProvidersByColumn;
   settings: PersistedWorkspaceSettings;
+  isSettingsOpen: boolean;
   dispatchByColumn: DispatchByColumn;
 };
 
@@ -120,6 +121,7 @@ function buildInitialState(initialState?: WorkspaceShellState): WorkspaceShellSt
       ...DEFAULT_STATE.settings,
       ...initialState?.settings,
     },
+    isSettingsOpen: false,
     dispatchByColumn: { ...(initialState?.dispatchByColumn ?? DEFAULT_STATE.dispatchByColumn) },
   };
 }
@@ -176,6 +178,13 @@ type WorkspaceShellAction =
       type: 'retryColumnDispatch';
       columnIndex: number;
       requestId: string;
+    }
+  | { type: 'openSettings' }
+  | { type: 'closeSettings' }
+  | {
+      type: 'updateSetting';
+      key: keyof PersistedWorkspaceSettings;
+      value: boolean;
     };
 
 const DEFAULT_STATE: WorkspaceShellState = {
@@ -183,6 +192,7 @@ const DEFAULT_STATE: WorkspaceShellState = {
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
   settings: { ...DEFAULT_WORKSPACE_PREFERENCES.settings },
+  isSettingsOpen: false,
   dispatchByColumn: {},
 };
 
@@ -330,6 +340,21 @@ export function workspaceShellReducer(state: WorkspaceShellState, action: Worksp
     };
   }
 
+  if (action.type === 'openSettings') {
+    return { ...state, isSettingsOpen: true };
+  }
+
+  if (action.type === 'closeSettings') {
+    return { ...state, isSettingsOpen: false };
+  }
+
+  if (action.type === 'updateSetting') {
+    return {
+      ...state,
+      settings: { ...state.settings, [action.key]: action.value },
+    };
+  }
+
   return {
     ...state,
     commandInput: action.commandInput,
@@ -342,9 +367,12 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
   const [state, dispatch] = useReducer(workspaceShellReducer, initialState, buildInitialState);
-  const { columnCount, commandInput, providersByColumn, settings, dispatchByColumn } = state;
+  const { columnCount, commandInput, providersByColumn, settings, isSettingsOpen, dispatchByColumn } = state;
   const providerSelectRefs = useRef<Record<number, HTMLSelectElement | null>>({});
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsPanelCloseBtnRef = useRef<HTMLButtonElement>(null);
   const hasMountedPersistenceEffect = useRef(false);
+  const hasMountedFocusEffect = useRef(false);
   const hasUserEditedPreferences = useRef(false);
   const dispatchByColumnRef = useRef(dispatchByColumn);
   const preferencesSnapshotRef = useRef<WorkspacePreferencesSnapshot>({
@@ -446,8 +474,25 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
     };
   }, [columnCount, dispatchByColumn]);
 
+  useEffect(() => {
+    // Skip the initial mount so the panel toggle does not steal focus on page load.
+    if (!hasMountedFocusEffect.current) {
+      hasMountedFocusEffect.current = true;
+      return;
+    }
+
+    if (isSettingsOpen) {
+      settingsPanelCloseBtnRef.current?.focus();
+    } else {
+      settingsButtonRef.current?.focus();
+    }
+  }, [isSettingsOpen]);
+
   return (
-    <div className="workspace-shell" data-testid="workspace-shell">
+    <div
+      className="workspace-shell"
+      data-testid="workspace-shell"
+      data-theme={settings.darkMode ? 'dark' : 'light'}>
       <header className="command-bar" data-testid="command-bar">
         <input
           aria-label="Shared query"
@@ -500,7 +545,17 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           ))}
         </div>
 
-        <button className="settings-button" type="button" aria-label="Open settings">
+        <button
+          ref={settingsButtonRef}
+          className="settings-button"
+          type="button"
+          aria-label="Open settings"
+          aria-haspopup="dialog"
+          aria-expanded={isSettingsOpen}
+          onClick={() => {
+            hasUserEditedPreferences.current = true;
+            dispatch({ type: 'openSettings' });
+          }}>
           Settings
         </button>
       </header>
@@ -651,6 +706,68 @@ export function WorkspaceShell({ initialState }: WorkspaceShellProps = {}) {
           ))}
         </div>
       </main>
+
+      {isSettingsOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Settings"
+          className="settings-panel"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              dispatch({ type: 'closeSettings' });
+            }
+          }}>
+          <div className="settings-panel-card">
+            <div className="settings-panel-header">
+              <h2 className="settings-panel-title">Settings</h2>
+              <button
+                ref={settingsPanelCloseBtnRef}
+                type="button"
+                className="settings-close-button"
+                aria-label="Close settings"
+                onClick={() => {
+                  dispatch({ type: 'closeSettings' });
+                }}>
+                ✕
+              </button>
+            </div>
+            <div className="settings-panel-body">
+              <label className="settings-toggle-row">
+                <span className="settings-toggle-label">Dark mode</span>
+                <input
+                  type="checkbox"
+                  checked={settings.darkMode}
+                  onChange={(event) => {
+                    hasUserEditedPreferences.current = true;
+                    dispatch({
+                      type: 'updateSetting',
+                      key: 'darkMode',
+                      value: event.target.checked,
+                    });
+                  }}
+                />
+              </label>
+              <label className="settings-toggle-row">
+                <span className="settings-toggle-label">Replace new tab page</span>
+                <input
+                  type="checkbox"
+                  checked={settings.replaceNewTab}
+                  onChange={(event) => {
+                    hasUserEditedPreferences.current = true;
+                    dispatch({
+                      type: 'updateSetting',
+                      key: 'replaceNewTab',
+                      value: event.target.checked,
+                    });
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

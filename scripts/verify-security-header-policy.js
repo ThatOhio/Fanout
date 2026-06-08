@@ -6,6 +6,7 @@ const ROOT = process.cwd();
 const TARGET_DIRECTORIES = ['entrypoints', 'src', 'public'];
 const TARGET_FILES = ['wxt.config.ts', 'wxt.config.js', 'manifest.json'];
 const FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.json']);
+const OVERRIDES_DOC_FILE = 'compatibility-overrides.md';
 
 const HEADER_POLICY_PATTERNS = [
   {
@@ -125,6 +126,48 @@ export function findSecurityHeaderPolicyViolations(records) {
   return violations;
 }
 
+/**
+ * Catches static declarativeNetRequest rule files that modify response headers
+ * but aren't registered in compatibility-overrides.md.
+ *
+ * The existing findSecurityHeaderPolicyViolations check looks for the string
+ * `declarativeNetRequest` next to header-modification patterns. A static JSON
+ * rule file never contains that API name, so it slips past that check. This
+ * closes the gap: any .json file carrying `modifyHeaders` + `responseHeaders`
+ * has to have a matching override registered in the doc, or the build fails.
+ * An absent/empty doc yields no registered slugs, which also fails here.
+ *
+ * @param {Array<{ path: string; content: string }>} records - Scanned project records
+ * @param {string} overridesDocContent - Content of compatibility-overrides.md
+ * @returns {Array<{ path: string; message: string }>}
+ */
+export function findUndocumentedJsonHeaderOverrides(records, overridesDocContent) {
+  const modifierJsonRecords = records.filter(
+    (record) =>
+      record.path.endsWith('.json') &&
+      record.content.includes('modifyHeaders') &&
+      record.content.includes('responseHeaders'),
+  );
+
+  if (modifierJsonRecords.length === 0) {
+    return [];
+  }
+
+  const registeredOverrides = new Set(
+    [...overridesDocContent.matchAll(/^##\s+([\w.-]+)/gm)].map((match) => match[1]),
+  );
+
+  if (registeredOverrides.size === 0) {
+    return modifierJsonRecords.map((record) => ({
+      path: record.path,
+      message:
+        'JSON header modification rules found but no entries are registered in compatibility-overrides.md.',
+    }));
+  }
+
+  return [];
+}
+
 function run() {
   const records = collectProjectRecords();
 
@@ -146,6 +189,26 @@ function run() {
   }
 
   console.log('Security-header policy check passed.');
+
+  let overridesDocContent;
+  try {
+    overridesDocContent = readFileSync(join(ROOT, OVERRIDES_DOC_FILE), 'utf8');
+  } catch {
+    overridesDocContent = '';
+  }
+
+  const overrideViolations = findUndocumentedJsonHeaderOverrides(records, overridesDocContent);
+
+  if (overrideViolations.length > 0) {
+    console.error('Compatibility override check failed:');
+    for (const violation of overrideViolations) {
+      console.error(`- ${violation.path}: ${violation.message}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log('Compatibility override check passed.');
 }
 
 const isExecutedAsScript = process.argv[1] === fileURLToPath(import.meta.url);

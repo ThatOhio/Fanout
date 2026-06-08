@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { findSecurityHeaderPolicyViolations } from '../scripts/verify-security-header-policy';
+import {
+  findSecurityHeaderPolicyViolations,
+  findUndocumentedJsonHeaderOverrides,
+} from '../scripts/verify-security-header-policy';
 
 describe('verify-security-header-policy guard', () => {
   it('returns no violations for non-header-modification code', () => {
@@ -92,5 +95,67 @@ describe('verify-security-header-policy guard', () => {
         pattern: 'declarativeNetRequest header modification',
       }),
     );
+  });
+});
+
+describe('findUndocumentedJsonHeaderOverrides', () => {
+  const ruleFileContent = JSON.stringify([
+    {
+      id: 1,
+      action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }] },
+      condition: { requestDomains: ['www.google.com'], resourceTypes: ['sub_frame'] },
+    },
+  ]);
+
+  it('returns no violations when no JSON files modify headers', () => {
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [
+        { path: 'public/manifest.json', content: '{"name":"fanout"}' },
+        { path: 'src/index.ts', content: 'console.log("safe");' },
+      ],
+      '',
+    );
+
+    expect(overrides).toEqual([]);
+  });
+
+  it('returns no violations when a header-modifying JSON file has registered overrides', () => {
+    const overridesDoc = [
+      '## google',
+      'removes x-frame-options for www.google.com',
+      '',
+      '## duckduckgo',
+      'removes x-frame-options for duckduckgo.com',
+    ].join('\n');
+
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [{ path: 'public/rules/compatibility-rules.json', content: ruleFileContent }],
+      overridesDoc,
+    );
+
+    expect(overrides).toEqual([]);
+  });
+
+  it('flags a header-modifying JSON file when no overrides are registered', () => {
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [{ path: 'public/rules/compatibility-rules.json', content: ruleFileContent }],
+      '# Compatibility overrides\n\nNo entries yet.',
+    );
+
+    expect(overrides).toContainEqual(
+      expect.objectContaining({
+        path: 'public/rules/compatibility-rules.json',
+        message: expect.stringContaining('compatibility-overrides.md'),
+      }),
+    );
+  });
+
+  it('treats an absent overrides doc as no registered entries', () => {
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [{ path: 'public/rules/compatibility-rules.json', content: ruleFileContent }],
+      '',
+    );
+
+    expect(overrides).toHaveLength(1);
   });
 });

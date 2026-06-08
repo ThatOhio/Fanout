@@ -8,7 +8,6 @@ export const WORKSPACE_RESTORE_WARNING_MESSAGE =
 export type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
 export type PersistedWorkspaceSettings = {
   darkMode: boolean;
-  replaceNewTab: boolean;
   replaceAddressBarSearch: boolean;
 };
 export type PersistedWorkspaceProvidersByColumn = Record<number, SearchProvider>;
@@ -44,7 +43,6 @@ export const DEFAULT_WORKSPACE_PREFERENCES: PersistedWorkspacePreferencesV1 = {
   providersByColumn: { ...DEFAULT_PROVIDERS_BY_COLUMN },
   settings: {
     darkMode: true,
-    replaceNewTab: false,
     replaceAddressBarSearch: false,
   },
 };
@@ -100,7 +98,6 @@ function decodeWorkspaceSettings(rawSettings: unknown): PersistedWorkspaceSettin
 
   if (
     typeof rawSettings.darkMode !== 'boolean' ||
-    typeof rawSettings.replaceNewTab !== 'boolean' ||
     typeof rawSettings.replaceAddressBarSearch !== 'boolean'
   ) {
     return undefined;
@@ -108,7 +105,6 @@ function decodeWorkspaceSettings(rawSettings: unknown): PersistedWorkspaceSettin
 
   return {
     darkMode: rawSettings.darkMode,
-    replaceNewTab: rawSettings.replaceNewTab,
     replaceAddressBarSearch: rawSettings.replaceAddressBarSearch,
   };
 }
@@ -240,7 +236,6 @@ export async function saveWorkspacePreferences(
     providersByColumn: normalizedProvidersByColumn,
     settings: {
       darkMode: preferences.settings.darkMode,
-      replaceNewTab: preferences.settings.replaceNewTab,
       replaceAddressBarSearch: preferences.settings.replaceAddressBarSearch,
     },
   };

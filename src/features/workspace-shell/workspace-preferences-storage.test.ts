@@ -20,9 +20,7 @@ describe('workspace-preferences-storage', () => {
         3: 'duckduckgo',
       },
       settings: {
-        darkMode: false,
-        replaceNewTab: true,
-        replaceAddressBarSearch: false,
+        darkMode: false,        replaceAddressBarSearch: false,
       },
     };
 
@@ -47,9 +45,7 @@ describe('workspace-preferences-storage', () => {
         1: 'google',
       },
       settings: {
-        darkMode: true,
-        replaceNewTab: false,
-        replaceAddressBarSearch: false,
+        darkMode: true,        replaceAddressBarSearch: false,
       },
     });
 
@@ -66,9 +62,7 @@ describe('workspace-preferences-storage', () => {
         2: 'duckduckgo',
       },
       settings: {
-        darkMode: true,
-        replaceNewTab: false,
-        replaceAddressBarSearch: false,
+        darkMode: true,        replaceAddressBarSearch: false,
       },
     });
 
@@ -111,9 +105,7 @@ describe('workspace-preferences-storage', () => {
             4: 'bing',
           },
           settings: {
-            darkMode: true,
-            replaceNewTab: false,
-            replaceAddressBarSearch: false,
+            darkMode: true,            replaceAddressBarSearch: false,
           },
         },
       }),
@@ -145,9 +137,7 @@ describe('workspace-preferences-storage', () => {
           4: 'bing',
         },
         settings: {
-          darkMode: true,
-          replaceNewTab: false,
-          replaceAddressBarSearch: true,
+          darkMode: true,          replaceAddressBarSearch: true,
         },
       },
       storageArea,
@@ -164,9 +154,7 @@ describe('workspace-preferences-storage', () => {
           4: 'bing',
         },
         settings: {
-          darkMode: true,
-          replaceNewTab: false,
-          replaceAddressBarSearch: true,
+          darkMode: true,          replaceAddressBarSearch: true,
         },
       },
     });

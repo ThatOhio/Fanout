@@ -9,4 +9,14 @@ export type PolicyViolation = {
   message: string;
 };
 
+export type OverrideViolation = {
+  path: string;
+  message: string;
+};
+
 export function findSecurityHeaderPolicyViolations(records: PolicyFileRecord[]): PolicyViolation[];
+
+export function findUndocumentedJsonHeaderOverrides(
+  records: PolicyFileRecord[],
+  overridesDocContent: string,
+): OverrideViolation[];

@@ -14,15 +14,15 @@ import { loadWorkspacePreferences } from '../src/features/workspace-shell/worksp
  */
 export function shouldInterceptNavigation(
   navigationUrl: string,
-  fanoutNewtabUrl: string,
+  fanoutWorkspaceUrl: string,
   replaceAddressBarSearch: boolean,
 ): { intercept: false } | { intercept: true; query: string } {
   if (!replaceAddressBarSearch) {
     return { intercept: false };
   }
 
-  // Never intercept Fanout's own newtab page (redirect loop prevention).
-  if (navigationUrl.startsWith(fanoutNewtabUrl)) {
+  // Never intercept Fanout's own workspace page (redirect loop prevention).
+  if (navigationUrl.startsWith(fanoutWorkspaceUrl)) {
     return { intercept: false };
   }
 
@@ -69,11 +69,11 @@ function setupAddressBarRouting() {
       navigationGenerationByTab.set(details.tabId, generation);
 
       try {
-        const fanoutNewtabUrl = browser.runtime.getURL('/newtab.html');
+        const fanoutWorkspaceUrl = browser.runtime.getURL('/workspace.html');
         const { preferences } = await loadWorkspacePreferences();
         const result = shouldInterceptNavigation(
           details.url,
-          fanoutNewtabUrl,
+          fanoutWorkspaceUrl,
           preferences.settings.replaceAddressBarSearch,
         );
 
@@ -86,7 +86,7 @@ function setupAddressBarRouting() {
         }
 
         await tabsApi.update(details.tabId, {
-          url: `${fanoutNewtabUrl}?q=${encodeURIComponent(result.query)}`,
+          url: `${fanoutWorkspaceUrl}?q=${encodeURIComponent(result.query)}`,
         });
       } catch {
         return;
@@ -98,6 +98,90 @@ function setupAddressBarRouting() {
   );
 }
 
+type ToolbarAction = {
+  onClicked?: { addListener: (callback: () => void) => void };
+};
+
+type MinimalTabsApi = {
+  query: (queryInfo: Record<string, unknown>) => Promise<Array<{ id?: number; windowId?: number }>>;
+  create: (createProperties: { url: string }) => Promise<unknown>;
+  update: (tabId: number, updateProperties: Record<string, unknown>) => Promise<unknown>;
+};
+
+// Focus an existing Fanout workspace tab if one is open, otherwise open a new
+// one. Keeps clicking the toolbar icon from piling up duplicate tabs.
+export async function openOrFocusWorkspaceTab(tabsApi: MinimalTabsApi): Promise<void> {
+  const workspaceUrl = browser.runtime.getURL('/workspace.html');
+
+  let existingTabs: Array<{ id?: number; windowId?: number }>;
+  try {
+    existingTabs = await tabsApi.query({ url: `${workspaceUrl}*` });
+  } catch {
+    try {
+      await tabsApi.create({ url: workspaceUrl });
+    } catch {
+      // Nothing more we can do; opening the workspace is best-effort.
+    }
+    return;
+  }
+
+  const match = existingTabs.find((tab) => typeof tab.id === 'number');
+
+  if (match && typeof match.id === 'number') {
+    try {
+      await tabsApi.update(match.id, { active: true });
+    } catch {
+      return;
+    }
+
+    const windows = (browser as typeof browser & {
+      windows?: { update?: (id: number, info: Record<string, unknown>) => Promise<unknown> };
+    }).windows;
+    if (typeof match.windowId === 'number' && windows?.update) {
+      try {
+        await windows.update(match.windowId, { focused: true });
+      } catch {
+        // Tab is already active; window focus is best-effort.
+      }
+    }
+    return;
+  }
+
+  try {
+    await tabsApi.create({ url: workspaceUrl });
+  } catch {
+    // Nothing more we can do; opening the workspace is best-effort.
+  }
+}
+
+let workspaceTabOpening = false;
+
+function setupToolbarLauncher() {
+  // MV3 exposes browser.action, MV2 (Firefox) exposes browser.browserAction.
+  const runtimeBrowser = browser as typeof browser & {
+    action?: ToolbarAction;
+    browserAction?: ToolbarAction;
+    tabs?: MinimalTabsApi;
+  };
+  const action = runtimeBrowser.action ?? runtimeBrowser.browserAction;
+  const tabsApi = runtimeBrowser.tabs;
+  if (!action?.onClicked || !tabsApi) {
+    return;
+  }
+
+  action.onClicked.addListener(() => {
+    if (workspaceTabOpening) {
+      return;
+    }
+
+    workspaceTabOpening = true;
+    void openOrFocusWorkspaceTab(tabsApi).finally(() => {
+      workspaceTabOpening = false;
+    });
+  });
+}
+
 export default defineBackground(() => {
   setupAddressBarRouting();
+  setupToolbarLauncher();
 });

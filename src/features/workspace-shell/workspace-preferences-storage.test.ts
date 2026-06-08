@@ -20,9 +20,7 @@ describe('workspace-preferences-storage', () => {
         3: 'duckduckgo',
       },
       settings: {
-        darkMode: false,
-        replaceNewTab: true,
-        replaceAddressBarSearch: false,
+        darkMode: false,        replaceAddressBarSearch: false,
       },
     };
 
@@ -48,7 +46,6 @@ describe('workspace-preferences-storage', () => {
       },
       settings: {
         darkMode: true,
-        replaceNewTab: false,
         replaceAddressBarSearch: false,
       },
     });
@@ -67,7 +64,6 @@ describe('workspace-preferences-storage', () => {
       },
       settings: {
         darkMode: true,
-        replaceNewTab: false,
         replaceAddressBarSearch: false,
       },
     });
@@ -112,7 +108,6 @@ describe('workspace-preferences-storage', () => {
           },
           settings: {
             darkMode: true,
-            replaceNewTab: false,
             replaceAddressBarSearch: false,
           },
         },
@@ -146,7 +141,6 @@ describe('workspace-preferences-storage', () => {
         },
         settings: {
           darkMode: true,
-          replaceNewTab: false,
           replaceAddressBarSearch: true,
         },
       },
@@ -165,7 +159,6 @@ describe('workspace-preferences-storage', () => {
         },
         settings: {
           darkMode: true,
-          replaceNewTab: false,
           replaceAddressBarSearch: true,
         },
       },

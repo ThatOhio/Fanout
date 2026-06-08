@@ -19,7 +19,6 @@ const baseState: WorkspaceShellState = {
   providersByColumn: buildDefaultProvidersByColumn(),
   settings: {
     darkMode: true,
-    replaceNewTab: false,
     replaceAddressBarSearch: false,
   },
   isSettingsOpen: false,
@@ -486,17 +485,13 @@ describe('WorkspaceShell', () => {
           4: 'bing',
         },
         settings: {
-          darkMode: false,
-          replaceNewTab: true,
-          replaceAddressBarSearch: true,
+          darkMode: false,          replaceAddressBarSearch: true,
         },
       },
     });
 
     expect(hydratedState.settings).toEqual({
-      darkMode: false,
-      replaceNewTab: true,
-      replaceAddressBarSearch: true,
+      darkMode: false,      replaceAddressBarSearch: true,
     });
     expect(hydratedState.dispatchByColumn[1]?.status).toBe('pending');
     expect(hydratedState.dispatchByColumn[1]?.query).toBe('edge case query');
@@ -524,7 +519,6 @@ describe('WorkspaceShell', () => {
             },
             settings: {
               darkMode: true,
-              replaceNewTab: false,
               replaceAddressBarSearch: false,
             },
           },
@@ -552,7 +546,6 @@ describe('WorkspaceShell', () => {
             },
             settings: {
               darkMode: true,
-              replaceNewTab: false,
               replaceAddressBarSearch: false,
             },
           },
@@ -583,7 +576,6 @@ describe('WorkspaceShell', () => {
             },
             settings: {
               darkMode: true,
-              replaceNewTab: false,
               replaceAddressBarSearch: false,
             },
           },
@@ -638,7 +630,6 @@ describe('WorkspaceShell', () => {
         },
         settings: {
           darkMode: true,
-          replaceNewTab: false,
           replaceAddressBarSearch: false,
         },
       });
@@ -869,9 +860,7 @@ describe('WorkspaceShell', () => {
       });
 
       expect(nextState.settings).toEqual({
-        darkMode: false,
-        replaceNewTab: false,
-        replaceAddressBarSearch: false,
+        darkMode: false,        replaceAddressBarSearch: false,
       });
     });
 
@@ -919,7 +908,6 @@ describe('WorkspaceShell', () => {
 
       expect(nextState.settings).toEqual({
         darkMode: true,
-        replaceNewTab: false,
         replaceAddressBarSearch: true,
       });
     });
@@ -944,7 +932,6 @@ describe('WorkspaceShell', () => {
       const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
       expect(persistedPayload?.settings).toMatchObject({
         darkMode: true,
-        replaceNewTab: false,
         replaceAddressBarSearch: true,
       });
     });
@@ -991,31 +978,6 @@ describe('WorkspaceShell', () => {
       await user.click(screen.getByLabelText('Dark mode'));
 
       expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
-    });
-
-    it('persists the replace-new-tab toggle through debounced storage writes', async () => {
-      vi.useFakeTimers();
-      const set = vi.fn().mockResolvedValue(undefined);
-      installBrowserStorageLocalMock({
-        get: vi.fn().mockResolvedValue({}),
-        set,
-        remove: vi.fn().mockResolvedValue(undefined),
-      });
-
-      render(<WorkspaceShell />);
-
-      fireEvent.click(screen.getByRole('button', { name: /open settings/i }));
-      fireEvent.click(screen.getByLabelText('Replace new tab page'));
-      vi.advanceTimersByTime(500);
-      await vi.runAllTimersAsync();
-
-      expect(set).toHaveBeenCalled();
-      const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
-      expect(persistedPayload?.settings).toMatchObject({
-        darkMode: true,
-        replaceNewTab: true,
-        replaceAddressBarSearch: false,
-      });
     });
 
     it('preserves workspace context immediately when settings panel opens', async () => {
@@ -1083,39 +1045,6 @@ describe('WorkspaceShell', () => {
       });
     });
 
-    it('restores replace-new-tab preference after unmount and remount', async () => {
-      let storedPayload: unknown;
-      const set = vi.fn().mockImplementation(async (items: Record<string, unknown>) => {
-        storedPayload = items.fanout_workspace_preferences;
-      });
-      installBrowserStorageLocalMock({
-        get: vi.fn().mockResolvedValue({}),
-        set,
-        remove: vi.fn().mockResolvedValue(undefined),
-      });
-
-      const user = userEvent.setup();
-      const { unmount } = render(<WorkspaceShell />);
-
-      await user.click(screen.getByRole('button', { name: /open settings/i }));
-      await user.click(screen.getByLabelText('Replace new tab page'));
-      await waitFor(() => expect(set).toHaveBeenCalled());
-      unmount();
-
-      installBrowserStorageLocalMock({
-        get: vi.fn().mockResolvedValue({
-          fanout_workspace_preferences: storedPayload,
-        }),
-        set: vi.fn().mockResolvedValue(undefined),
-        remove: vi.fn().mockResolvedValue(undefined),
-      });
-
-      render(<WorkspaceShell />);
-
-      await user.click(screen.getByRole('button', { name: /open settings/i }));
-      expect(await screen.findByLabelText('Replace new tab page')).toBeChecked();
-    });
-
     it('does not block preference hydration when settings is opened before storage load completes', async () => {
       let resolveGet: ((value: Record<string, unknown>) => void) | undefined;
       const getPromise = new Promise<Record<string, unknown>>((resolve) => {
@@ -1143,7 +1072,6 @@ describe('WorkspaceShell', () => {
           },
           settings: {
             darkMode: false,
-            replaceNewTab: true,
             replaceAddressBarSearch: false,
           },
         },
@@ -1151,7 +1079,6 @@ describe('WorkspaceShell', () => {
 
       expect(await screen.findByRole('region', { name: 'Column 3' })).toBeInTheDocument();
       expect(screen.getByTestId('workspace-shell')).toHaveAttribute('data-theme', 'light');
-      expect(screen.getByLabelText('Replace new tab page')).toBeChecked();
     });
   });
 
@@ -1202,7 +1129,6 @@ describe('WorkspaceShell', () => {
             },
             settings: {
               darkMode: true,
-              replaceNewTab: false,
               replaceAddressBarSearch: true,
             },
           },

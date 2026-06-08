@@ -25,7 +25,7 @@ export type ColumnDispatchState = {
   errorMessage?: string;
 };
 export type DispatchByColumn = Record<number, ColumnDispatchState | undefined>;
-export type UiExposedWorkspaceSettingKey = 'darkMode' | 'replaceNewTab' | 'replaceAddressBarSearch';
+export type UiExposedWorkspaceSettingKey = 'darkMode' | 'replaceAddressBarSearch';
 export type WorkspaceShellState = {
   columnCount: (typeof COLUMN_COUNTS)[number];
   commandInput: string;
@@ -640,10 +640,12 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
       </header>
 
       <main className="workspace-region">
-        <h1>Fanout Workspace</h1>
-        <p>
-          Columns: <strong>{columnCount}</strong>
-        </p>
+        <div className="workspace-heading">
+          <h1>Fanout Workspace</h1>
+          <p className="workspace-column-count">
+            Columns: <strong>{columnCount}</strong>
+          </p>
+        </div>
         {restoreNotice ? (
           <p
             className="workspace-restore-notice"
@@ -667,132 +669,128 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
           className="column-layout"
           data-testid="column-layout"
           style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
-          {Array.from({ length: columnCount }).map((_, index) => (
-            <section key={index} className="column-placeholder" aria-label={`Column ${index + 1}`}>
-              <header className="column-placeholder-header">
-                <label className="column-provider-label" htmlFor={`column-provider-${index + 1}`}>
-                  Column {index + 1} provider
-                </label>
-                {(() => {
-                  const columnIndex = index + 1;
-                  const selectedProvider = resolveColumnProvider(providersByColumn, columnIndex);
-                  const columnDispatch = dispatchByColumn[columnIndex];
-                  const columnStatus = columnDispatch?.status ?? 'idle';
-                  const providerLabel = PROVIDER_LABELS[selectedProvider];
-                  const statusText =
-                    columnStatus === 'idle'
-                      ? 'Idle'
-                      : columnStatus === 'pending'
-                        ? 'Pending'
-                        : columnStatus === 'success'
-                          ? 'Success'
-                          : 'Error';
+          {Array.from({ length: columnCount }).map((_, index) => {
+            const columnIndex = index + 1;
+            const selectedProvider = resolveColumnProvider(providersByColumn, columnIndex);
+            const columnDispatch = dispatchByColumn[columnIndex];
+            const columnStatus = columnDispatch?.status ?? 'idle';
+            const providerLabel = PROVIDER_LABELS[selectedProvider];
+            const statusText =
+              columnStatus === 'idle'
+                ? 'Idle'
+                : columnStatus === 'pending'
+                  ? 'Pending'
+                  : columnStatus === 'success'
+                    ? 'Success'
+                    : 'Error';
 
-                  return (
-                    <>
-                <select
-                  id={`column-provider-${columnIndex}`}
-                  className="column-provider-select"
-                  value={selectedProvider}
-                  ref={(element) => {
-                    providerSelectRefs.current[columnIndex] = element;
-                  }}
-                  onChange={(event) => {
-                    const provider = event.target.value;
-                    if (!isSearchProvider(provider)) {
-                      return;
-                    }
+            return (
+              <section key={index} className="column-placeholder" aria-label={`Column ${columnIndex}`}>
+                <header className="column-placeholder-header">
+                  <label className="column-provider-label" htmlFor={`column-provider-${columnIndex}`}>
+                    Column {columnIndex} provider
+                  </label>
+                  <select
+                    id={`column-provider-${columnIndex}`}
+                    className="column-provider-select"
+                    value={selectedProvider}
+                    ref={(element) => {
+                      providerSelectRefs.current[columnIndex] = element;
+                    }}
+                    onChange={(event) => {
+                      const provider = event.target.value;
+                      if (!isSearchProvider(provider)) {
+                        return;
+                      }
 
-                    hasUserEditedPreferences.current = true;
-                    dispatch({
-                      type: 'setColumnProvider',
-                      columnIndex,
-                      provider,
-                      requestId:
-                        columnDispatch?.status === 'pending' && Boolean(columnDispatch.query.trim())
-                          ? createRequestId()
-                          : undefined,
-                    });
-                  }}>
-                  {SEARCH_PROVIDERS.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {PROVIDER_LABELS[provider]}
-                    </option>
-                  ))}
-                </select>
-                      <span
-                        aria-label={`Column ${columnIndex} status`}
-                        role="status"
-                        aria-live="polite"
-                        className={`column-status column-status-${columnStatus}`}>
-                        {statusText}
-                      </span>
-                      {columnDispatch?.query ? (
-                        <div className="column-portal">
-                          <iframe
-                            key={`${columnIndex}-${columnDispatch.requestId}-${selectedProvider}`}
-                            className="column-portal-frame"
-                            title={`${providerLabel} results for ${columnDispatch.query}`}
-                            src={buildSearchProviderUrl(selectedProvider, columnDispatch.query)}
-                            onLoad={() => {
-                              dispatch({
-                                type: 'resolveColumnDispatch',
-                                columnIndex,
-                                requestId: columnDispatch.requestId,
-                                status: 'success',
-                              });
-                            }}
-                            onError={() => {
-                              dispatch({
-                                type: 'resolveColumnDispatch',
-                                columnIndex,
-                                requestId: columnDispatch.requestId,
-                                status: 'error',
-                                errorMessage: `Could not load ${providerLabel} results.`,
-                              });
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <span>Column {columnIndex} Placeholder</span>
-                      )}
-                      {columnStatus === 'error' && columnDispatch ? (
-                        <div className="column-error" role="alert">
-                          <p>
-                            {columnDispatch.errorMessage ?? `Could not load ${providerLabel} results.`}
-                          </p>
-                          <div className="column-error-actions">
-                            <button
-                              type="button"
-                              className="column-action-button"
-                              aria-label={`Retry column ${columnIndex}`}
-                              onClick={() => {
-                                dispatch({
-                                  type: 'retryColumnDispatch',
-                                  columnIndex,
-                                  requestId: createRequestId(),
-                                });
-                              }}>
-                              Retry
-                            </button>
-                            <button
-                              type="button"
-                              className="column-action-button"
-                              aria-label={`Change provider for column ${columnIndex}`}
-                              onClick={() => {
-                                providerSelectRefs.current[columnIndex]?.focus();
-                              }}>
-                              Change provider
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  );
-                })()}
-              </header>
-            </section>
-          ))}
+                      hasUserEditedPreferences.current = true;
+                      dispatch({
+                        type: 'setColumnProvider',
+                        columnIndex,
+                        provider,
+                        requestId:
+                          columnDispatch?.status === 'pending' && Boolean(columnDispatch.query.trim())
+                            ? createRequestId()
+                            : undefined,
+                      });
+                    }}>
+                    {SEARCH_PROVIDERS.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {PROVIDER_LABELS[provider]}
+                      </option>
+                    ))}
+                  </select>
+                  <span
+                    aria-label={`Column ${columnIndex} status`}
+                    role="status"
+                    aria-live="polite"
+                    className={`column-status column-status-${columnStatus}`}>
+                    {statusText}
+                  </span>
+                </header>
+                {columnDispatch?.query ? (
+                  <div className="column-portal">
+                    <iframe
+                      key={`${columnIndex}-${columnDispatch.requestId}-${selectedProvider}`}
+                      className="column-portal-frame"
+                      title={`${providerLabel} results for ${columnDispatch.query}`}
+                      src={buildSearchProviderUrl(selectedProvider, columnDispatch.query)}
+                      onLoad={() => {
+                        dispatch({
+                          type: 'resolveColumnDispatch',
+                          columnIndex,
+                          requestId: columnDispatch.requestId,
+                          status: 'success',
+                        });
+                      }}
+                      onError={() => {
+                        dispatch({
+                          type: 'resolveColumnDispatch',
+                          columnIndex,
+                          requestId: columnDispatch.requestId,
+                          status: 'error',
+                          errorMessage: `Could not load ${providerLabel} results.`,
+                        });
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="column-portal column-portal-empty">
+                    <span>Column {columnIndex} Placeholder</span>
+                  </div>
+                )}
+                {columnStatus === 'error' && columnDispatch ? (
+                  <div className="column-error" role="alert">
+                    <p>{columnDispatch.errorMessage ?? `Could not load ${providerLabel} results.`}</p>
+                    <div className="column-error-actions">
+                      <button
+                        type="button"
+                        className="column-action-button"
+                        aria-label={`Retry column ${columnIndex}`}
+                        onClick={() => {
+                          dispatch({
+                            type: 'retryColumnDispatch',
+                            columnIndex,
+                            requestId: createRequestId(),
+                          });
+                        }}>
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        className="column-action-button"
+                        aria-label={`Change provider for column ${columnIndex}`}
+                        onClick={() => {
+                          providerSelectRefs.current[columnIndex]?.focus();
+                        }}>
+                        Change provider
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       </main>
 
@@ -836,21 +834,6 @@ export function WorkspaceShell({ initialState, initialQuery }: WorkspaceShellPro
                     dispatch({
                       type: 'updateSetting',
                       key: 'darkMode',
-                      value: event.target.checked,
-                    });
-                  }}
-                />
-              </label>
-              <label className="settings-toggle-row">
-                <span className="settings-toggle-label">Replace new tab page</span>
-                <input
-                  type="checkbox"
-                  checked={settings.replaceNewTab}
-                  onChange={(event) => {
-                    hasUserEditedPreferences.current = true;
-                    dispatch({
-                      type: 'updateSetting',
-                      key: 'replaceNewTab',
                       value: event.target.checked,
                     });
                   }}

@@ -127,6 +127,44 @@ export function findSecurityHeaderPolicyViolations(records) {
 }
 
 /**
+ * Pull provider domains out of a static declarativeNetRequest rules JSON file.
+ *
+ * @param {string} content
+ * @returns {Set<string>}
+ */
+function extractRequestDomainsFromJson(content) {
+  const domains = new Set();
+
+  try {
+    const rules = JSON.parse(content);
+    if (!Array.isArray(rules)) {
+      return domains;
+    }
+
+    for (const rule of rules) {
+      const requestDomains = rule?.condition?.requestDomains;
+      if (!Array.isArray(requestDomains)) {
+        continue;
+      }
+
+      for (const domain of requestDomains) {
+        if (typeof domain === 'string' && domain.length > 0) {
+          domains.add(domain);
+        }
+      }
+    }
+  } catch {
+    for (const match of content.matchAll(/"requestDomains"\s*:\s*\[(.*?)\]/gs)) {
+      for (const domainMatch of match[1].matchAll(/"([^"]+)"/g)) {
+        domains.add(domainMatch[1]);
+      }
+    }
+  }
+
+  return domains;
+}
+
+/**
  * Catches static declarativeNetRequest rule files that modify response headers
  * but aren't registered in compatibility-overrides.md.
  *
@@ -165,7 +203,34 @@ export function findUndocumentedJsonHeaderOverrides(records, overridesDocContent
     }));
   }
 
-  return [];
+  const violations = [];
+
+  for (const record of modifierJsonRecords) {
+    const domains = extractRequestDomainsFromJson(record.content);
+
+    if (domains.size === 0) {
+      continue;
+    }
+
+    if (registeredOverrides.size < domains.size) {
+      violations.push({
+        path: record.path,
+        message: `JSON header modification rules reference ${domains.size} provider domain(s) but compatibility-overrides.md only registers ${registeredOverrides.size}.`,
+      });
+      continue;
+    }
+
+    for (const domain of domains) {
+      if (!overridesDocContent.includes(domain)) {
+        violations.push({
+          path: record.path,
+          message: `Provider domain "${domain}" in JSON header rules is not documented in compatibility-overrides.md.`,
+        });
+      }
+    }
+  }
+
+  return violations;
 }
 
 function run() {

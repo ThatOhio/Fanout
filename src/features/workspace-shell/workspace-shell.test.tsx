@@ -18,7 +18,8 @@ const baseState: WorkspaceShellState = {
   commandInput: '',
   providersByColumn: buildDefaultProvidersByColumn(),
   settings: {
-    darkMode: true,    replaceAddressBarSearch: false,
+    darkMode: true,
+    replaceAddressBarSearch: false,
   },
   isSettingsOpen: false,
   dispatchByColumn: {},
@@ -517,7 +518,8 @@ describe('WorkspaceShell', () => {
               3: 'duckduckgo',
             },
             settings: {
-              darkMode: true,              replaceAddressBarSearch: false,
+              darkMode: true,
+              replaceAddressBarSearch: false,
             },
           },
         }),
@@ -543,7 +545,8 @@ describe('WorkspaceShell', () => {
               3: 'duckduckgo',
             },
             settings: {
-              darkMode: true,              replaceAddressBarSearch: false,
+              darkMode: true,
+              replaceAddressBarSearch: false,
             },
           },
         }),
@@ -572,7 +575,8 @@ describe('WorkspaceShell', () => {
               4: 'bing',
             },
             settings: {
-              darkMode: true,              replaceAddressBarSearch: false,
+              darkMode: true,
+              replaceAddressBarSearch: false,
             },
           },
         }),
@@ -625,7 +629,8 @@ describe('WorkspaceShell', () => {
           3: 'brave',
         },
         settings: {
-          darkMode: true,          replaceAddressBarSearch: false,
+          darkMode: true,
+          replaceAddressBarSearch: false,
         },
       });
     });
@@ -902,7 +907,8 @@ describe('WorkspaceShell', () => {
       });
 
       expect(nextState.settings).toEqual({
-        darkMode: true,        replaceAddressBarSearch: true,
+        darkMode: true,
+        replaceAddressBarSearch: true,
       });
     });
 
@@ -925,7 +931,8 @@ describe('WorkspaceShell', () => {
       expect(set).toHaveBeenCalled();
       const persistedPayload = set.mock.calls.at(-1)?.[0]?.fanout_workspace_preferences;
       expect(persistedPayload?.settings).toMatchObject({
-        darkMode: true,        replaceAddressBarSearch: true,
+        darkMode: true,
+        replaceAddressBarSearch: true,
       });
     });
 
@@ -1121,7 +1128,8 @@ describe('WorkspaceShell', () => {
               2: 'brave',
             },
             settings: {
-              darkMode: true,              replaceAddressBarSearch: true,
+              darkMode: true,
+              replaceAddressBarSearch: true,
             },
           },
         }),

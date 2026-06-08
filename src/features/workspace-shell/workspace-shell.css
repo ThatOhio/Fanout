@@ -167,9 +167,6 @@
 
 .column-provider-label {
   margin-right: auto;
-}
-
-.column-provider-label {
   font-size: 0.875rem;
   color: var(--color-ink-secondary);
 }

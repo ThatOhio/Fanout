@@ -2,7 +2,7 @@
 
 This is where I write down every permission Fanout asks for and why, so anyone looking at the extension can see what it's able to do without reading through the code.
 
-Fanout asks for as little as possible. The only host permissions it declares are the four search providers it renders in columns (Google, DuckDuckGo, Brave, Bing), and they're used for one thing: removing the `X-Frame-Options` header so those pages can load in their column. It can't read or change any other site you visit. The one feature beyond the search columns that needs more than the basics is the optional address-bar search, and that's off until you turn it on.
+Fanout asks for as little as possible. The only host permissions it declares are the four search providers it renders in columns (Google, DuckDuckGo, Brave, Bing), and they're used to remove response headers that block iframe embedding (`X-Frame-Options`, and for DuckDuckGo and Brave also `Content-Security-Policy`). It can't read or change any other site you visit. The one feature beyond the search columns that needs more than the basics is the optional address-bar search, and that's off until you turn it on.
 
 There's a check wired into CI so this file stays in sync with the manifest. `pnpm policy:check` runs `scripts/verify-permissions.js`, which pulls the `permissions` array out of the WXT config and makes sure each one has a matching `##` heading here. If I add a permission and forget to explain it, the build fails. A permission's heading should be only the permission name, like `## webNavigation`. Anything more detailed goes under `###`.
 
@@ -44,7 +44,7 @@ Behaves the same on Chrome, Firefox, and Edge.
 
 This is what makes the columns actually show results. Each column embeds a search provider in an `<iframe>`, but Google, DuckDuckGo, Brave, and Bing all send `X-Frame-Options` response headers that stop their pages from being framed by another origin. Without this, every column fails on a real query and times out. So Fanout ships a static rule that removes the `x-frame-options` header for those four provider responses, which lets the frames load.
 
-The rule lives in `public/rules/compatibility-rules.json` and is declared in `wxt.config.ts`. It's a static `declarativeNetRequest` ruleset, not a runtime listener, so Fanout never sees the request or response bodies. It only strips one header.
+The rule lives in `public/rules/compatibility-rules.json` and is declared in `wxt.config.ts`. It's a static `declarativeNetRequest` ruleset, not a runtime listener, so Fanout never sees the request or response bodies. It removes the headers that block framing: `x-frame-options` for all four providers, and `content-security-policy` for DuckDuckGo and Brave where frame-ancestors also blocks embedding.
 
 ### Scope
 

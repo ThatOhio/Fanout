@@ -123,9 +123,6 @@ describe('findUndocumentedJsonHeaderOverrides', () => {
     const overridesDoc = [
       '## google',
       'removes x-frame-options for www.google.com',
-      '',
-      '## duckduckgo',
-      'removes x-frame-options for duckduckgo.com',
     ].join('\n');
 
     const overrides = findUndocumentedJsonHeaderOverrides(
@@ -134,6 +131,65 @@ describe('findUndocumentedJsonHeaderOverrides', () => {
     );
 
     expect(overrides).toEqual([]);
+  });
+
+  it('flags when a JSON domain is missing from the overrides doc', () => {
+    const multiDomainRules = JSON.stringify([
+      {
+        id: 1,
+        action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }] },
+        condition: {
+          requestDomains: ['www.google.com', 'duckduckgo.com'],
+          resourceTypes: ['sub_frame'],
+        },
+      },
+    ]);
+
+    const overridesDoc = [
+      '## google',
+      'removes x-frame-options for www.google.com',
+      '## duckduckgo',
+      'override registered but domain string omitted from prose',
+    ].join('\n');
+
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [{ path: 'public/rules/compatibility-rules.json', content: multiDomainRules }],
+      overridesDoc,
+    );
+
+    expect(overrides).toContainEqual(
+      expect.objectContaining({
+        path: 'public/rules/compatibility-rules.json',
+        message: expect.stringContaining('duckduckgo.com'),
+      }),
+    );
+  });
+
+  it('flags when registered override count is lower than JSON domain count', () => {
+    const multiDomainRules = JSON.stringify([
+      {
+        id: 1,
+        action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }] },
+        condition: {
+          requestDomains: ['www.google.com', 'duckduckgo.com'],
+          resourceTypes: ['sub_frame'],
+        },
+      },
+    ]);
+
+    const overridesDoc = ['## google', 'removes x-frame-options for www.google.com'].join('\n');
+
+    const overrides = findUndocumentedJsonHeaderOverrides(
+      [{ path: 'public/rules/compatibility-rules.json', content: multiDomainRules }],
+      overridesDoc,
+    );
+
+    expect(overrides).toContainEqual(
+      expect.objectContaining({
+        path: 'public/rules/compatibility-rules.json',
+        message: expect.stringContaining('only registers 1'),
+      }),
+    );
   });
 
   it('flags a header-modifying JSON file when no overrides are registered', () => {

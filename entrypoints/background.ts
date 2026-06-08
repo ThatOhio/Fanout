@@ -110,31 +110,51 @@ type MinimalTabsApi = {
 
 // Focus an existing Fanout workspace tab if one is open, otherwise open a new
 // one. Keeps clicking the toolbar icon from piling up duplicate tabs.
-async function openOrFocusWorkspaceTab(tabsApi: MinimalTabsApi): Promise<void> {
+export async function openOrFocusWorkspaceTab(tabsApi: MinimalTabsApi): Promise<void> {
   const workspaceUrl = browser.runtime.getURL('/workspace.html');
 
+  let existingTabs: Array<{ id?: number; windowId?: number }>;
   try {
-    const existingTabs = await tabsApi.query({ url: `${workspaceUrl}*` });
-    const match = existingTabs.find((tab) => typeof tab.id === 'number');
-
-    if (match && typeof match.id === 'number') {
-      await tabsApi.update(match.id, { active: true });
-      const windows = (browser as typeof browser & { windows?: { update?: (id: number, info: Record<string, unknown>) => Promise<unknown> } }).windows;
-      if (typeof match.windowId === 'number' && windows?.update) {
-        await windows.update(match.windowId, { focused: true });
-      }
-      return;
-    }
-
-    await tabsApi.create({ url: workspaceUrl });
+    existingTabs = await tabsApi.query({ url: `${workspaceUrl}*` });
   } catch {
     try {
       await tabsApi.create({ url: workspaceUrl });
     } catch {
       // Nothing more we can do; opening the workspace is best-effort.
     }
+    return;
+  }
+
+  const match = existingTabs.find((tab) => typeof tab.id === 'number');
+
+  if (match && typeof match.id === 'number') {
+    try {
+      await tabsApi.update(match.id, { active: true });
+    } catch {
+      return;
+    }
+
+    const windows = (browser as typeof browser & {
+      windows?: { update?: (id: number, info: Record<string, unknown>) => Promise<unknown> };
+    }).windows;
+    if (typeof match.windowId === 'number' && windows?.update) {
+      try {
+        await windows.update(match.windowId, { focused: true });
+      } catch {
+        // Tab is already active; window focus is best-effort.
+      }
+    }
+    return;
+  }
+
+  try {
+    await tabsApi.create({ url: workspaceUrl });
+  } catch {
+    // Nothing more we can do; opening the workspace is best-effort.
   }
 }
+
+let workspaceTabOpening = false;
 
 function setupToolbarLauncher() {
   // MV3 exposes browser.action, MV2 (Firefox) exposes browser.browserAction.
@@ -150,7 +170,14 @@ function setupToolbarLauncher() {
   }
 
   action.onClicked.addListener(() => {
-    void openOrFocusWorkspaceTab(tabsApi);
+    if (workspaceTabOpening) {
+      return;
+    }
+
+    workspaceTabOpening = true;
+    void openOrFocusWorkspaceTab(tabsApi).finally(() => {
+      workspaceTabOpening = false;
+    });
   });
 }
 

@@ -19,7 +19,8 @@
     "typecheck": "pnpm run compile",
     "policy:permissions": "node scripts/verify-permissions.js",
     "policy:headers": "node scripts/verify-security-header-policy.js",
-    "policy:check": "pnpm run policy:permissions && pnpm run policy:headers",
+    "policy:fanout": "node scripts/verify-fanout-reliability.js",
+    "policy:check": "pnpm run policy:permissions && pnpm run policy:headers && pnpm run policy:fanout",
     "test": "vitest run",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare"

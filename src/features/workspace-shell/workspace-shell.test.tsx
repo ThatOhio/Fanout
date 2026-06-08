@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   COLUMN_COUNTS,
+  COLUMN_DISPATCH_TIMEOUT_MS,
   SEARCH_PROVIDERS,
   WorkspaceShell,
   WORKSPACE_HYDRATION_TIMEOUT_MS,
@@ -495,6 +496,109 @@ describe('WorkspaceShell', () => {
     });
     expect(hydratedState.dispatchByColumn[1]?.status).toBe('pending');
     expect(hydratedState.dispatchByColumn[1]?.query).toBe('edge case query');
+  });
+
+  describe('column dispatch timeout', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('transitions each pending column to error after COLUMN_DISPATCH_TIMEOUT_MS', async () => {
+      vi.useFakeTimers();
+
+      const pendingState = workspaceShellReducer(baseState, {
+        type: 'submitQuery',
+        query: 'coffee beans',
+        requestId: 'request-1',
+      });
+
+      render(<WorkspaceShell initialState={pendingState} />);
+
+      expect(screen.getByRole('status', { name: 'Column 1 status' })).toHaveTextContent('Pending');
+      expect(screen.getByRole('status', { name: 'Column 2 status' })).toHaveTextContent('Pending');
+
+      await act(async () => {
+        vi.advanceTimersByTime(COLUMN_DISPATCH_TIMEOUT_MS + 100);
+      });
+
+      expect(screen.getByRole('status', { name: 'Column 1 status' })).toHaveTextContent('Error');
+      expect(screen.getByRole('status', { name: 'Column 2 status' })).toHaveTextContent('Error');
+      expect(screen.getAllByRole('alert')).toHaveLength(2);
+    });
+
+    it('timeout error message includes the provider name', async () => {
+      vi.useFakeTimers();
+
+      const pendingState = workspaceShellReducer(baseState, {
+        type: 'submitQuery',
+        query: 'coffee beans',
+        requestId: 'request-1',
+      });
+
+      render(<WorkspaceShell initialState={pendingState} />);
+
+      await act(async () => {
+        vi.advanceTimersByTime(COLUMN_DISPATCH_TIMEOUT_MS + 100);
+      });
+
+      const alerts = screen.getAllByRole('alert');
+      expect(alerts[0]).toHaveTextContent('Google');
+      expect(alerts[1]).toHaveTextContent('DuckDuckGo');
+    });
+
+    it('sibling column is not blocked when one column already loaded', async () => {
+      vi.useFakeTimers();
+
+      const pendingState = workspaceShellReducer(baseState, {
+        type: 'submitQuery',
+        query: 'coffee beans',
+        requestId: 'request-1',
+      });
+
+      render(<WorkspaceShell initialState={pendingState} />);
+      fireEvent.load(screen.getByTitle('Google results for coffee beans'));
+
+      await act(async () => {
+        vi.advanceTimersByTime(COLUMN_DISPATCH_TIMEOUT_MS + 100);
+      });
+
+      expect(screen.getByRole('status', { name: 'Column 1 status' })).toHaveTextContent('Success');
+      expect(screen.getByRole('status', { name: 'Column 2 status' })).toHaveTextContent('Error');
+    });
+
+    it('retry after timeout sets up a fresh pending state', () => {
+      vi.useFakeTimers();
+
+      const pendingState = workspaceShellReducer(baseState, {
+        type: 'submitQuery',
+        query: 'coffee beans',
+        requestId: 'request-1',
+      });
+      const timedOutState = workspaceShellReducer(pendingState, {
+        type: 'resolveColumnDispatch',
+        columnIndex: 1,
+        requestId: 'request-1',
+        status: 'error',
+        errorMessage: 'Google did not finish loading before timeout.',
+      });
+
+      vi.advanceTimersByTime(25);
+      const retriedState = workspaceShellReducer(timedOutState, {
+        type: 'retryColumnDispatch',
+        columnIndex: 1,
+        requestId: 'request-2',
+      });
+
+      expect(retriedState.dispatchByColumn[1]).toMatchObject({
+        status: 'pending',
+        requestId: 'request-2',
+        query: 'coffee beans',
+      });
+      expect(retriedState.dispatchByColumn[1]?.pendingStartedAt).toBeGreaterThan(
+        timedOutState.dispatchByColumn[1]?.pendingStartedAt ?? 0,
+      );
+      expect(retriedState.dispatchByColumn[2]).toBe(timedOutState.dispatchByColumn[2]);
+    });
   });
 
   describe('persistence', () => {

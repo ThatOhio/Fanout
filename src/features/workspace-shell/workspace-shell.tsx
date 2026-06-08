@@ -204,7 +204,7 @@ const DEFAULT_STATE: WorkspaceShellState = {
   routingError: null,
 };
 
-const COLUMN_DISPATCH_TIMEOUT_MS = 10_000;
+export const COLUMN_DISPATCH_TIMEOUT_MS = 10_000;
 export const WORKSPACE_HYDRATION_TIMEOUT_MS = 5_000;
 
 export function workspaceShellReducer(state: WorkspaceShellState, action: WorkspaceShellAction): WorkspaceShellState {
